@@ -1,0 +1,77 @@
+<!-- Each tab is a shell .view; its id MUST equal the tab's data-tab, because
+     the shell's showTab() shows/hides .view elements by id. Inside each view
+     sits one .panel card. The shell auto-activates the first view on load. -->
+
+<!-- Tools -->
+<section class="view" id="tools">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="info" id="tools-info">—</div>
+      <div class="ctrls">
+        <input type="text" class="filter" id="tools-filter" placeholder="filter by name or description…">
+        <button data-refresh="tools">↻</button>
+      </div>
+    </div>
+    <div class="note">
+      <span class="label">tip:</span>
+      click a tool card to expand and see its parameters. Use the toggles on the
+      <a href="#" data-tab="state" class="tab-link">Tool State</a> tab to enable/disable
+      specific tools and actions.
+    </div>
+    <div id="tools-body" class="loading">loading…</div>
+  </div>
+</section>
+
+<!-- Config -->
+<section class="view" id="config">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="info" id="config-info">—</div>
+      <div class="ctrls"><button data-refresh="config">↻</button></div>
+    </div>
+    <div class="note">
+      <span class="label">override layer:</span>
+      tools ship with Nano-floor defaults at the call site; this shows only the
+      operator overrides on top. Secrets are masked.
+    </div>
+    <div id="config-body" class="loading">loading…</div>
+  </div>
+</section>
+
+<!-- Tool State -->
+<section class="view" id="state">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="info" id="state-info">—</div>
+      <div class="ctrls">
+        <input type="text" class="filter" id="state-filter" placeholder="filter by tool…">
+        <button data-refresh="state">↻</button>
+      </div>
+    </div>
+    <div class="note">
+      <span class="label">enable/disable:</span>
+      toggle tools and their sub-actions on or off. Disabled tools are hidden from
+      the LLM's MCP tool surface. Changes apply immediately to the running server.
+    </div>
+    <div id="state-body" class="loading">loading…</div>
+  </div>
+</section>
+
+<!-- Logs -->
+<section class="view" id="logs">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="info" id="logs-info">—</div>
+      <div class="ctrls">
+        <input type="text" class="filter" id="logs-filter" placeholder="filter by tool name…">
+        <button data-refresh="logs">↻</button>
+      </div>
+    </div>
+    <div class="note">
+      <span class="label">content-blind:</span>
+      entries capture metadata only — tool name, duration, success/failure.
+      Argument values and result text are intentionally not stored.
+    </div>
+    <div id="logs-body" class="loading">loading…</div>
+  </div>
+</section>

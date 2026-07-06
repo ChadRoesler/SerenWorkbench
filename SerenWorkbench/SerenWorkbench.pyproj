@@ -1,0 +1,114 @@
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>71c6dc76-505d-4e4a-b2e3-0d3f021b1011</ProjectGuid>
+    <ProjectHome>.</ProjectHome>
+    <StartupFile>
+    </StartupFile>
+    <SearchPath>
+    </SearchPath>
+    <WorkingDirectory>.</WorkingDirectory>
+    <OutputPath>.</OutputPath>
+    <Name>SerenWorkbench</Name>
+    <RootNamespace>SerenWorkbench</RootNamespace>
+    <TestFramework>Pytest</TestFramework>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <ItemGroup>
+    <Folder Include="seren_workbench\" />
+    <Folder Include="seren_workbench\dynamic_tools\" />
+    <Folder Include="seren_workbench\mcp\" />
+    <Folder Include="seren_workbench\models\" />
+    <Folder Include="seren_workbench\models\tools\" />
+    <Folder Include="seren_workbench\routes\" />
+    <Folder Include="seren_workbench\tool_config\" />
+    <Folder Include="seren_workbench\tool_config\__pycache__\" />
+    <Folder Include="seren_workbench\viewer\" />
+    <Folder Include="seren_workbench\viewer\ui\" />
+    <Folder Include="tests\" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="seren_workbench\app.py" />
+    <Compile Include="seren_workbench\config.py" />
+    <Compile Include="seren_workbench\dynamic_tools\dynamic_tool_registry.py" />
+    <Compile Include="seren_workbench\dynamic_tools\manifest_loader.py" />
+    <Compile Include="seren_workbench\dynamic_tools\manifest_models.py" />
+    <Compile Include="seren_workbench\dynamic_tools\param_subst.py" />
+    <Compile Include="seren_workbench\dynamic_tools\process_dispatcher.py" />
+    <Compile Include="seren_workbench\dynamic_tools\tool_audit_log.py" />
+    <Compile Include="seren_workbench\dynamic_tools\web_dispatcher.py" />
+    <Compile Include="seren_workbench\dynamic_tools\yaml_dispatched_tool.py" />
+    <Compile Include="seren_workbench\dynamic_tools\__init__.py" />
+    <Compile Include="seren_workbench\mcp\server.py" />
+    <Compile Include="seren_workbench\mcp\__init__.py" />
+    <Compile Include="seren_workbench\models\tools\cluster_tools.py" />
+    <Compile Include="seren_workbench\models\tools\consolidator_tools.py" />
+    <Compile Include="seren_workbench\models\tools\ensure_service_running_tool.py" />
+    <Compile Include="seren_workbench\models\tools\introspection_and_agency_tools.py" />
+    <Compile Include="seren_workbench\models\tools\log_tools.py" />
+    <Compile Include="seren_workbench\models\tools\memory_tools.py" />
+    <Compile Include="seren_workbench\models\tools\model_tools.py" />
+    <Compile Include="seren_workbench\models\tools\scheduler_tools.py" />
+    <Compile Include="seren_workbench\models\tools\self_tools.py" />
+    <Compile Include="seren_workbench\models\tools\service_control_tools.py" />
+    <Compile Include="seren_workbench\models\tools\time_tools.py" />
+    <Compile Include="seren_workbench\models\tools\wait_for_service_tool.py" />
+    <Compile Include="seren_workbench\models\tools\web_tools.py" />
+    <Compile Include="seren_workbench\models\tools\which_model_tool.py" />
+    <Compile Include="seren_workbench\models\tools\__init__.py" />
+    <Compile Include="seren_workbench\routes\config.py" />
+    <Compile Include="seren_workbench\routes\info.py" />
+    <Compile Include="seren_workbench\routes\logs.py" />
+    <Compile Include="seren_workbench\routes\tools.py" />
+    <Compile Include="seren_workbench\routes\__init__.py" />
+    <Compile Include="seren_workbench\tool_config\mcp_config.py" />
+    <Compile Include="seren_workbench\tool_config\tool_section.py" />
+    <Compile Include="seren_workbench\tool_config\__init__.py" />
+    <Compile Include="seren_workbench\tool_registry.py" />
+    <Compile Include="seren_workbench\_version.py" />
+    <Compile Include="seren_workbench\__init__.py" />
+    <Compile Include="seren_workbench\__main__.py" />
+    <Compile Include="tests\conftest.py" />
+    <Compile Include="tests\test_auth.py" />
+    <Compile Include="tests\test_mcp_endpoint.py" />
+    <Compile Include="tests\test_mcp_mount.py" />
+    <Compile Include="tests\test_routes.py" />
+    <Compile Include="tests\test_smoke.py" />
+    <Compile Include="tests\test_tool_registry.py" />
+    <Compile Include="tests\__init__.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="LICENSE" />
+    <Content Include="pyproject.toml" />
+    <Content Include="README.md" />
+    <Content Include="seren-workbench.yaml.sample" />
+    <Content Include="seren_workbench\tool_config\__pycache__\mcp_config.cpython-311.pyc" />
+    <Content Include="seren_workbench\tool_config\__pycache__\mcp_config.cpython-312.pyc" />
+    <Content Include="seren_workbench\tool_config\__pycache__\tool_section.cpython-311.pyc" />
+    <Content Include="seren_workbench\tool_config\__pycache__\tool_section.cpython-312.pyc" />
+    <Content Include="seren_workbench\tool_config\__pycache__\__init__.cpython-311.pyc" />
+    <Content Include="seren_workbench\tool_config\__pycache__\__init__.cpython-312.pyc" />
+    <Content Include="seren_workbench\viewer\ui\body.html" />
+    <Content Include="seren_workbench\viewer\ui\header_aside.html" />
+    <Content Include="seren_workbench\viewer\ui\scripts.js" />
+    <Content Include="seren_workbench\viewer\ui\styles.css" />
+    <Content Include="seren_workbench\viewer\ui\tabs.html" />
+  </ItemGroup>
+  <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
+  <!-- Uncomment the CoreCompile target to enable the Build command in
+       Visual Studio and specify your pre- and post-build commands in
+       the BeforeBuild and AfterBuild targets below. -->
+  <!--<Target Name="CoreCompile" />-->
+  <Target Name="BeforeBuild">
+  </Target>
+  <Target Name="AfterBuild">
+  </Target>
+</Project>

@@ -1,0 +1,33 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  seren-workbench.yaml - SerenWorkbench tool overrides (operator-tunable knobs).
+# ═══════════════════════════════════════════════════════════════════════
+#
+#  Everything here is OPTIONAL. Each tool ships with Nano-floor defaults at
+#  its CALL SITE (sane for an Orin Nano Super); this file is purely the
+#  override layer for beefier setups. A missing key or unparseable value
+#  falls back to the call-site default without crashing - lenient parse by
+#  design.
+#
+#  Format:    tools.<tool_name>.<knob>: <value>
+#  Schema is open - a new tool with new knobs needs no change to config.
+#
+#  NOT for credentials: this file ships with the package. Keep tokens / API
+#  keys in environment variables or a chmod-600 .env, not in here.
+# ═══════════════════════════════════════════════════════════════════════
+
+server:
+  host: 127.0.0.1
+  port: 7425             # family convention: memory 7420, loci-v 7421,
+                          # loci-nv 7422, scc-nv 7423, scc-v 7424,
+                          # workbench 7425, probe 7430
+  bearer_token: ""
+
+tools:
+  # -- search_the_web (WebTools.SearchTheWeb) --
+  search_the_web:
+    default_results: 5
+    max_results: 20
+
+  # -- fetch_url (WebTools.FetchUrl) --
+  fetch_url:
+    max_chars: 8000
