@@ -12,7 +12,10 @@ import json
 from datetime import datetime, timezone, timedelta
 
 
-TOOL_DEFINITION = {
+# NOTE the suffix: registry discovery matches attrs ENDING in _TOOL_DEF /
+# _TOOL_DEFINITION. The bare name TOOL_DEFINITION missed that check (no
+# underscore boundary) and this tool silently vanished from the surface.
+GET_CURRENT_TIME_TOOL_DEF = {
     "name": "get_current_time",
     "description": (
         "Returns the current date and time. Use this whenever the user asks "

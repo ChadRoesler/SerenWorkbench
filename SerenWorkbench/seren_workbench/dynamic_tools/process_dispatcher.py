@@ -6,10 +6,19 @@
 #  argv is a LIST. Each {paramName} token inside ANY element substitutes
 #  to that parameter's stringified value, in place. The substituted string
 #  lands as ONE argv element regardless of what it contains. Because we
-#  spawn via subprocess.run with a list (not shell=True), classic CWE-78
-#  is structurally closed.
+#  spawn via create_subprocess_exec with a list (never a shell), classic
+#  CWE-78 is structurally closed.
+#
+#  ASYNC BY DESIGN - this is called from inside an MCP tool handler on the
+#  event loop. A blocking subprocess.communicate() would freeze EVERY
+#  in-flight request for up to the timeout; asyncio.create_subprocess_exec
+#  keeps the loop breathing.
 #
 #  TIMEOUTS - default 30s, override per-tool via invoke.timeout_seconds.
+#  asyncio.wait_for raises asyncio.TimeoutError (the RIGHT exception here —
+#  the old sync version caught asyncio.TimeoutError around
+#  subprocess.communicate(), which raises subprocess.TimeoutExpired, so the
+#  timeout path never fired and the child leaked).
 #
 #  STDOUT/STDERR - stdout becomes the tool's result text (truncated if huge).
 #  stderr is logged to stderr but NOT returned to the LLM.
@@ -19,7 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from typing import Dict, Optional
+from typing import Dict
 
 from .manifest_models import ManifestConfiguration, ToolInvoke
 from .param_subst import substitute_scalar
@@ -28,7 +37,7 @@ DEFAULT_TIMEOUT_SECONDS = 30
 MAX_STDOUT_CHARS = 16_000
 
 
-def invoke_process(
+async def invoke_process(
     invoke: ToolInvoke,
     file_config: ManifestConfiguration | None,
     tool_name: str,
@@ -51,17 +60,12 @@ def invoke_process(
     if not substituted:
         return _error("argv resolved to empty.")
 
-    import subprocess
-    import shlex
-
-    proc = None
     try:
-        proc = subprocess.Popen(
-            substituted,
+        proc = await asyncio.create_subprocess_exec(
+            *substituted,
             cwd=cwd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            shell=False,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
     except Exception as ex:
         return _error(
@@ -70,10 +74,10 @@ def invoke_process(
         )
 
     try:
-        outs, errs = proc.communicate(timeout=timeout_sec)
+        outs, errs = await asyncio.wait_for(proc.communicate(), timeout=timeout_sec)
     except asyncio.TimeoutError:
         proc.kill()
-        proc.wait()
+        await proc.wait()
         return _error(
             f"tool '{tool_name}' timed out after {timeout_sec}s.",
             hint="Bump invoke.timeout_seconds in the manifest if the tool genuinely needs more.",
@@ -82,10 +86,8 @@ def invoke_process(
     out_text = outs.decode("utf-8", errors="replace") if outs else ""
     err_text = errs.decode("utf-8", errors="replace") if errs else ""
 
-    truncated = False
     if len(out_text) > MAX_STDOUT_CHARS:
         out_text = out_text[:MAX_STDOUT_CHARS] + "\n…[stdout truncated]"
-        truncated = True
 
     if err_text:
         print(

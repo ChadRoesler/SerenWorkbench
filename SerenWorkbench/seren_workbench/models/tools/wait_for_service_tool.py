@@ -17,7 +17,7 @@ import httpx
 from ...tool_config.mcp_config import McpConfig
 
 
-TOOL_DEFINITION = {
+WAIT_FOR_SERVICE_TOOL_DEF = {
     "name": "wait_for_service",
     "description": (
         "Polls RuntimeHost until the given service is running on at least "

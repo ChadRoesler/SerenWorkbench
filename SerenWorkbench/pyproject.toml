@@ -1,32 +1,41 @@
+# ════════════════════════════════════════════════════════════════════════
+#  seren-workbench — MCP server for the Seren stack.
+#
+#  The tool surface LLMs reach through: builtin tools (memory, web, time,
+#  cluster, scheduler) + dynamic YAML-manifest tools, an operator dashboard,
+#  and the MCP streamable-HTTP transport — one process, port 7425.
+#
+#  Family pattern: same layout as seren-memory / seren-loci /
+#  seren-corpus-callosum. Version flows from the git tag via setuptools-scm.
+# ════════════════════════════════════════════════════════════════════════
+
 [build-system]
-requires = ["setuptools>=68", "setuptools-scm>=8", "wheel"]
+requires = ["setuptools>=68", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "seren-workbench"
 dynamic = ["version"]
-description = "MCP (Model Context Protocol) server for the Seren stack"
+description = "MCP server for the Seren stack — the tool surface LLMs reach through."
 readme = "README.md"
-requires-python = ">=3.10"
 license = { text = "GPL-3.0-or-later" }
-authors = [{ name = "Chad Roesler" }]
-keywords = ["llm", "mcp", "tools", "seren"]
-
+requires-python = ">=3.10,<3.13"
+authors = [
+    { name = "Chad Roesler" },
+]
 dependencies = [
+    # mcp is a CORE dep here (not an extra like seren-memory's [mcp]) — an
+    # MCP server without its protocol SDK is a dashboard with no purpose.
     "mcp>=1.3.0",
-    "fastapi>=0.115.0",
-    "uvicorn[standard]>=0.34.0",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "httpx>=0.28",
     "pyyaml>=6.0",
-    "httpx>=0.28.0",
-    "dnspython>=2.7.0",
     "seren-meninges>=1.0.0,<2",
     "seren-sinew>=1.0.0,<2",
 ]
 
 [project.optional-dependencies]
-dynamic-tools = [
-    "seren-workbench-dynamic>=0.1.0",
-]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
@@ -35,23 +44,22 @@ dev = [
 [project.scripts]
 seren-workbench = "seren_workbench.__main__:main"
 
+[tool.setuptools_scm]
+# Version comes from the git tag; written at build time, read by __init__.
+version_file = "seren_workbench/_version.py"
+# The repo root is one level up from this pyproject (nested family layout).
+root = ".."
+
 [tool.setuptools.packages.find]
-where = ["."]
 include = ["seren_workbench*"]
 
 [tool.setuptools.package-data]
 seren_workbench = [
-    "viewer/ui/*.html", "viewer/ui/*.css", "viewer/ui/*.js",
-    "models/tools/*.py",
-    "dynamic_tools/*.py",
-    "config/*.py",
+    "viewer/ui/*.html",
+    "viewer/ui/*.css",
+    "viewer/ui/*.js",
 ]
 
-[tool.setuptools_scm]
-root = ".."
-version_scheme = "release-branch-semver"
-version_file = "seren_workbench/_version.py"
-
 [tool.pytest.ini_options]
-testpaths = ["tests"]
 asyncio_mode = "auto"
+testpaths = ["tests"]

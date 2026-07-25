@@ -18,8 +18,8 @@ def test_root_and_health(client):
     root = client.get("/").json()
     assert root["service"] == "SerenWorkbench"
     assert "version" in root
-    assert root["tools_count"] >= 16
-    assert root["builtin_count"] >= 16
+    assert root["tools_count"] >= 24
+    assert root["builtin_count"] >= 24
     assert root["dynamic_count"] == 0  # no YAML manifests on disk
 
 
@@ -27,7 +27,7 @@ def test_tools_endpoint(client):
     r = client.get("/tools")
     assert r.status_code == 200
     data = r.json()
-    assert data["count"] >= 16
+    assert data["count"] >= 24
     tools = data["tools"]
     # Spot-check a few well-known tools
     names = {t["name"] for t in tools}
@@ -36,6 +36,9 @@ def test_tools_endpoint(client):
     assert "forget" in names
     assert "fetch_url" in names
     assert "search_the_web" in names
+    # And a few from the recovered-discovery set
+    assert "get_current_time" in names
+    assert "get_self_context" in names
 
     # Each tool should have a name, description, type, and parameters
     for t in tools:

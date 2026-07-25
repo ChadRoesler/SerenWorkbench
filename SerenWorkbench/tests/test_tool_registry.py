@@ -33,10 +33,30 @@ def test_registry_initialises_all_enabled():
         assert reg.is_enabled(t.name) is True
 
 
-def test_build_registry_returns_16_builtins():
+def test_build_registry_returns_24_builtins():
+    """The FULL builtin surface — 16 suffixed defs + the 8 recovered from
+    the bare-TOOL_DEFINITION discovery bug."""
     reg = build_registry()
-    assert len(reg._builtin) >= 16
+    assert len(reg._builtin) >= 24
     assert len(reg._dynamic) == 0
+
+
+def test_build_registry_seeds_disabled_list():
+    """DashboardConfig.tools_disabled must actually bite at startup — it was
+    a dead config field before this pass."""
+    reg = build_registry(tools_disabled=["fetch_url", "search_the_web"])
+    assert reg.is_enabled("fetch_url") is False
+    assert reg.is_enabled("search_the_web") is False
+    assert reg.is_enabled("remember") is True
+
+
+def test_build_registry_enabled_list_is_allowlist():
+    """Non-empty tools_enabled = allowlist: everything else starts disabled."""
+    reg = build_registry(tools_enabled=["remember", "recall"])
+    assert reg.is_enabled("remember") is True
+    assert reg.is_enabled("recall") is True
+    assert reg.is_enabled("forget") is False
+    assert reg.is_enabled("get_current_time") is False
 
 
 # ── Enable/Disable Tools ────────────────────────────────────────────────

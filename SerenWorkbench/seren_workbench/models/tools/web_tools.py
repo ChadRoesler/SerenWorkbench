@@ -10,9 +10,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 from typing import Optional
+from urllib.parse import quote
 
 import httpx
 from ...tool_config.mcp_config import McpConfig
@@ -84,7 +86,9 @@ async def search_the_web(
     n = max(1, min(max_results if max_results > 0 else default_results, max_results_cap))
 
     try:
-        path = f"/search?q={__import__('urllib.parse').quote(query)}&format=json"
+        # (was: __import__('urllib.parse').quote — returns top-level urllib,
+        # which has no .quote in py3. Proper from-import at module top now.)
+        path = f"/search?q={quote(query)}&format=json"
         resp = await searxng.get(path)
 
         if not resp.is_success:
@@ -139,6 +143,8 @@ async def fetch_url(
         return ssrf_err
 
     try:
+        # NOTE: absolute URL on a base_url'd client overrides the base —
+        # httpx-sanctioned, so the searxng client doubles as the fetcher.
         resp = await searxng.get(url)
 
         content_type = resp.headers.get("content-type", "unknown")
@@ -173,7 +179,6 @@ async def fetch_url(
 # -- SSRF helpers --
 
 async def _check_ssrf(parsed) -> Optional[str]:
-    import socket
     try:
         addrs = await _resolve_hostname(parsed.hostname)
     except Exception as ex:
@@ -192,10 +197,12 @@ async def _check_ssrf(parsed) -> Optional[str]:
 
 
 async def _resolve_hostname(hostname: str) -> list:
+    # (was: a bogus loop.getnameinfo((hostname, 0), AI_CANONNAME) line —
+    # getnameinfo is REVERSE lookup and takes a sockaddr, so it raised on
+    # every call; plus asyncio was never imported at module level, so the
+    # SSRF guard died with NameError before it could guard anything.)
     import socket
     loop = asyncio.get_event_loop()
-    addrs = await loop.getnameinfo((hostname, 0), socket.AI_CANONNAME)
-    # Use socket's getaddrinfo for resolution
     infos = await loop.run_in_executor(None, socket.getaddrinfo, hostname, None)
     return [info[4][0] for info in infos]
 

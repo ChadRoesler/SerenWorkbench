@@ -18,7 +18,7 @@ from ...tool_config.mcp_config import McpConfig
 
 ALLOWED_SERVICES = {"llama", "kokoro", "comfy", "whisper", "chroma", "searxng"}
 
-TOOL_DEFINITION = {
+ENSURE_SERVICE_RUNNING_TOOL_DEF = {
     "name": "ensure_service_running",
     "description": (
         "Ensures a service is running: checks status, starts it if "

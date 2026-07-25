@@ -19,6 +19,13 @@ Serves:
 
 Integrates seren_meninges (config/auth/viewer baseplate) and seren_sinew
 (request logging) — following the same pattern as the rest of the Seren family.
+
+DEPENDENCY INJECTION: the lifespan builds one httpx.AsyncClient per Seren
+service (base URLs from cfg.services) and registers them BY PARAMETER NAME
+in app.state.di_registry. The MCP layer injects them into builtin tool
+impls whose params are annotated httpx.AsyncClient / McpConfig. Without
+this the impls' DI defaults are None and every service call explodes —
+the half-cutover state this port started in.
 """
 from __future__ import annotations
 
@@ -27,6 +34,7 @@ from contextlib import asynccontextmanager, AsyncExitStack
 from pathlib import Path
 from typing import Optional
 
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 
@@ -54,38 +62,65 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         app.state.config = cfg
 
-        # Load McpConfig (tool-level knobs) and pass it to the registry
+        # Load McpConfig (tool-level knobs) from the SAME yaml load_config
+        # resolved — no CWD-vs-argv[0] split brain between the server block
+        # and the tools block.
         from .tool_config.mcp_config import McpConfig as _McpConfig
-        mcp_config = _McpConfig.load()
+        mcp_config = _McpConfig.load(cfg.source_path)
         app.state.mcp_config = mcp_config
 
         app.state.tool_registry = build_registry(
             mcp_config=mcp_config,
             tools_dir=cfg.dashboard.tools_dir,
+            tools_enabled=cfg.dashboard.tools_enabled,
+            tools_disabled=cfg.dashboard.tools_disabled,
         )
 
         # Wire the tool audit log
         from .dynamic_tools.tool_audit_log import ToolAuditLog
         app.state.audit_log = ToolAuditLog()
 
-        # Mount the MCP surface — conditionally, so a missing `mcp` package
-        # doesn't crash startup.
-        try:
-            from .mcp.server import mount_mcp_routes
-            mcp_server = mount_mcp_routes(app)
-        except ImportError as exc:
-            mcp_server = None
-            print(f"[seren-workbench] MCP surface not available; HTTP-only mode ({exc})")
-        except Exception as exc:
-            mcp_server = None
-            print(f"[seren-workbench] MCP mount failed: {exc!r} — continuing without MCP")
+        async with AsyncExitStack() as _stack:
+            # ── DI clients: one AsyncClient per Seren service ───────────
+            svc = cfg.services
+            timeout = httpx.Timeout(svc.timeout_seconds)
 
-        # The streamable-HTTP transport needs its session manager's task
-        # group entered explicitly.
-        async with AsyncExitStack() as _mcp_stack:
+            async def _client(base_url: str) -> httpx.AsyncClient:
+                c = httpx.AsyncClient(base_url=base_url, timeout=timeout)
+                await _stack.enter_async_context(c)
+                return c
+
+            # A base_url-less client for fetch_url absolute gets and for
+            # kind=web dynamic tools (their base_url comes from the manifest).
+            _general = await _stack.enter_async_context(
+                httpx.AsyncClient(timeout=timeout))
+
+            app.state.di_registry = {
+                "memory": await _client(svc.memory_url),
+                "runtime_host": await _client(svc.runtime_host_url),
+                "searxng": await _client(svc.searxng_url),
+                "scheduler": await _client(svc.scheduler_url),
+                "config": mcp_config,
+                "_dynamic_web_client": _general,
+            }
+
+            # Mount the MCP surface — conditionally, so a missing `mcp`
+            # package doesn't crash startup.
+            try:
+                from .mcp.server import mount_mcp_routes
+                mcp_server = mount_mcp_routes(app)
+            except ImportError as exc:
+                mcp_server = None
+                print(f"[seren-workbench] MCP surface not available; HTTP-only mode ({exc})")
+            except Exception as exc:
+                mcp_server = None
+                print(f"[seren-workbench] MCP mount failed: {exc!r} — continuing without MCP")
+
+            # The streamable-HTTP transport needs its session manager's task
+            # group entered explicitly.
             session_manager = getattr(mcp_server, "session_manager", None)
             if session_manager is not None:
-                await _mcp_stack.enter_async_context(session_manager.run())
+                await _stack.enter_async_context(session_manager.run())
                 print("[seren-workbench] MCP session manager running")
             yield
 
@@ -108,8 +143,6 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
     )
 
     viewer_dir = Path(__file__).resolve().parent / "viewer" / "ui"
-
-    # ── Info routes (inline — simple enough to keep here) ───────────────
 
     # ── The operator dashboard viewer ──────────────────────────────────
     @app.get("/viewer")

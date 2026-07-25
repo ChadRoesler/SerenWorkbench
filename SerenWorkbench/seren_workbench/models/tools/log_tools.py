@@ -18,7 +18,7 @@ ALLOWED_SERVICES = {"llama", "kokoro", "comfy", "whisper", "chroma", "searxng"}
 DEFAULT_LINES = 50
 MAX_LINES = 200
 
-TOOL_DEFINITION = {
+GET_RECENT_LOGS_TOOL_DEF = {
     "name": "get_recent_logs",
     "description": (
         "Fetches the last N lines of a service's log file. Use this when "

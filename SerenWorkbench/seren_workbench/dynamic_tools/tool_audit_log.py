@@ -3,10 +3,11 @@
 #
 #  CONTENT-BLIND BY DESIGN - only metadata, never arg values or result text.
 #
-#  v1: only YamlDispatchedTool (dynamic / plug-and-play tools). Compile-time
-#  tools don't go through our code path yet.
+#  Covers both YamlDispatchedTool (dynamic / plug-and-play) and builtin
+#  tool wrappers — every MCP tool call lands here.
 #
-#  CAPACITY: 500 entries fixed. LinkedList for O(1) prepend + tail-trim.
+#  CAPACITY: 500 entries fixed. deque for O(1) prepend + tail-trim
+#  (newest first — read via snapshot(), which honors that ordering).
 # ════════════════════════════════════════════════════════════════════════
 
 from __future__ import annotations

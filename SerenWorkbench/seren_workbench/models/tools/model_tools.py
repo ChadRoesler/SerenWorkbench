@@ -13,7 +13,7 @@ import httpx
 
 MODEL_CAPABLE_SERVICES = {"llama", "comfy", "whisper"}
 
-TOOL_DEFINITION = {
+LIST_MODELS_TOOL_DEF = {
     "name": "list_models",
     "description": (
         "Lists the models available for a given service on whichever node "

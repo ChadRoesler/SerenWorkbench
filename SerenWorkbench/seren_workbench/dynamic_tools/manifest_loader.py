@@ -5,11 +5,18 @@
 #  POSTEL: same shape as McpConfig.load(). Missing dir is fine (empty
 #  result), malformed file is skipped with a warning (not fatal), remote
 #  fetch failure is skipped with a warning.
+#
+#  SYNC FETCH BY DESIGN: load_directory() runs at startup, inside the
+#  FastAPI lifespan — which is ALREADY on the event loop, so asyncio.run()
+#  here raises "cannot be called from a running event loop" (the old bug
+#  that killed every remote import). Startup blocking a couple seconds on
+#  a manifest fetch is fine; a sync httpx.Client keeps it dead simple.
+#  If no client is provided, we create one per fetch — `from:` imports
+#  (the SerenMargin self-hosted-manifest flow) work out of the box.
 # ════════════════════════════════════════════════════════════════════════
 
 from __future__ import annotations
 
-import asyncio
 import os
 import sys
 import time
@@ -28,6 +35,7 @@ from .manifest_models import (
 
 REMOTE_FETCH_ATTEMPTS = 3
 REMOTE_FETCH_RETRY_DELAY_S = 2.0
+REMOTE_FETCH_TIMEOUT_S = 10.0
 
 
 # ── LoadResult ────────────────────────────────────────────────────────
@@ -46,7 +54,10 @@ class LoadResult:
 class ManifestLoader:
     """Scans tools/, parses YAML, fetches remote imports, detects collisions."""
 
-    def __init__(self, http_client: httpx.AsyncClient | None = None) -> None:
+    def __init__(self, http_client: httpx.Client | None = None) -> None:
+        # A SYNC client (or None → one is created per fetch). This loader
+        # runs inside the lifespan; an AsyncClient can't be driven from
+        # sync code here without re-entering the running loop.
         self._http = http_client
 
     def load_directory(self, tools_dir: str) -> LoadResult:
@@ -152,16 +163,9 @@ class ManifestLoader:
         if not url:
             return
 
-        if self._http is None:
-            result.warnings.append(
-                f"{Path(local_source).name}: 'from: {url}' skipped - "
-                "no HTTP client available"
-            )
-            return
-
         try:
             print(f"[mcp-registry] fetching remote manifest: {url}", file=sys.stderr)
-            body = asyncio.run(self._fetch_with_retry(url))
+            body = self._fetch_with_retry(url)
         except Exception as ex:
             result.warnings.append(
                 f"{Path(local_source).name}: remote fetch failed for '{url}' "
@@ -241,22 +245,30 @@ class ManifestLoader:
 
             self._add_candidate(by_name, tool_entry.name, tool_entry, remote_manifest, url)
 
-    async def _fetch_with_retry(self, url: str) -> str:
+    def _fetch_with_retry(self, url: str) -> str:
         last_ex = None
-        for attempt in range(1, REMOTE_FETCH_ATTEMPTS + 1):
-            try:
-                resp = await self._http.get(url)
-                resp.raise_for_status()
-                return resp.text
-            except Exception as ex:
-                last_ex = ex
-                if attempt < REMOTE_FETCH_ATTEMPTS:
-                    print(
-                        f"[mcp-registry] fetch attempt {attempt}/{REMOTE_FETCH_ATTEMPTS} failed "
-                        f"for {url}: {ex}; retrying in {REMOTE_FETCH_RETRY_DELAY_S}s",
-                        file=sys.stderr,
-                    )
-                    await asyncio.sleep(REMOTE_FETCH_RETRY_DELAY_S)
+        client = self._http
+        own_client = client is None
+        if own_client:
+            client = httpx.Client(timeout=REMOTE_FETCH_TIMEOUT_S)
+        try:
+            for attempt in range(1, REMOTE_FETCH_ATTEMPTS + 1):
+                try:
+                    resp = client.get(url)
+                    resp.raise_for_status()
+                    return resp.text
+                except Exception as ex:
+                    last_ex = ex
+                    if attempt < REMOTE_FETCH_ATTEMPTS:
+                        print(
+                            f"[mcp-registry] fetch attempt {attempt}/{REMOTE_FETCH_ATTEMPTS} failed "
+                            f"for {url}: {ex}; retrying in {REMOTE_FETCH_RETRY_DELAY_S}s",
+                            file=sys.stderr,
+                        )
+                        time.sleep(REMOTE_FETCH_RETRY_DELAY_S)
+        finally:
+            if own_client:
+                client.close()
         raise last_ex or RuntimeError("all fetch attempts failed for unknown reasons")
 
     @staticmethod

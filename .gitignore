@@ -428,5 +428,20 @@ FodyWeavers.xsd
 *.msm
 *.msp
 
-seren-mcp.yaml
-seren-margin.yaml
+# ── Seren ───────────────────────────────────────────────────────────────
+# The local config may carry a bearer token — never commit it. (The old
+# entries here were fossils from other repos: seren-mcp.yaml and
+# seren-margin.yaml aren't read by this service; seren-workbench.yaml is.)
+seren-workbench.yaml
+
+# ── Python packaging ────────────────────────────────────────────────────
+# setuptools-scm writes _version.py at build time — generated, not source.
+SerenWorkbench/seren_workbench/_version.py
+dist/
+*.egg-info/
+.eggs/
+.pytest_cache/
+
+# Makefile test venvs (belt-and-suspenders; the targets also delete them)
+.venv*/
+venv/

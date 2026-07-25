@@ -15,7 +15,7 @@ from typing import Optional
 import httpx
 
 
-TOOL_DEFINITION = {
+GET_SELF_CONTEXT_TOOL_DEF = {
     "name": "get_self_context",
     "description": (
         "Returns a snapshot of who/where you are: which model you're running "
@@ -34,7 +34,7 @@ TOOL_DEFINITION = {
 }
 
 
-async def get_self_context(runtime_host: httpx.AsyncClient, **kwargs) -> str:
+async def get_self_context(runtime_host: httpx.AsyncClient = None, **kwargs) -> str:
     try:
         resp = await runtime_host.get("/api/v1/system/status")
         if not resp.is_success:

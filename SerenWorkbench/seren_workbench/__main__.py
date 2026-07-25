@@ -9,7 +9,9 @@ Usage::
     python -m seren_workbench [--config CONFIG] [--port PORT] [--host HOST]
 
 Config is loaded from ./seren-workbench.yaml by default; override with
---config or the SEREN_WORKBENCH_CONFIG env var.
+--config or the SEREN_WORKBENCH_CONFIG env var. The resolved path is
+threaded through cfg.source_path so the tools block (McpConfig) loads
+from the SAME file — including when --config is used.
 """
 from __future__ import annotations
 

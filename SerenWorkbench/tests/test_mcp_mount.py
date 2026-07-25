@@ -5,7 +5,7 @@ Checks that the MCP route IS present (or gracefully absent when the SDK is
 missing). Does NOT drive a full JSON-RPC request — that lives in
 test_mcp_endpoint.py (gated on the mcp SDK).
 
-Same pattern as SerenWorkbench/tests/test_mcp_mount.py and
+Same pattern as SerenMemory/tests/test_mcp_mount.py and
 SerenLoci/tests/test_mcp_mount.py.
 """
 from __future__ import annotations
@@ -14,6 +14,28 @@ import pytest
 
 from seren_workbench.app import create_app
 from seren_workbench.config import WorkbenchConfig, load_config
+
+
+def _route_paths(app) -> set:
+    """Collect route paths across FastAPI versions.
+
+    Older FastAPI materializes include_router entries as APIRoutes with
+    .path immediately; newer versions keep lazy _IncludedRouter wrappers
+    (no .path) that expose the underlying router as .original_router.
+    Walk both shapes so the test is version-proof.
+    """
+    paths = set()
+    for r in app.routes:
+        p = getattr(r, "path", None)
+        if p is not None:
+            paths.add(p)
+        sub = getattr(r, "original_router", None)
+        if sub is not None:
+            for sr in getattr(sub, "routes", []):
+                sp = getattr(sr, "path", None)
+                if sp is not None:
+                    paths.add(sp)
+    return paths
 
 
 @pytest.fixture
@@ -26,7 +48,7 @@ def test_mcp_route_exists_or_gracefully_absent(app):
     """The MCP mount may fail (no SDK, schema issue) — either way the app
     should still start and serve its core routes."""
     # The app should have routes for /, /health, /tools, /viewer regardless
-    routes = {r.path for r in app.routes}
+    routes = _route_paths(app)
     assert "/" in routes
     assert "/health" in routes
     assert "/tools" in routes
@@ -54,5 +76,5 @@ def test_app_starts_without_mcp_sdk(monkeypatch):
     cfg.server.port = 17499
     app = create_app(cfg)
     assert app is not None
-    routes = {r.path for r in app.routes}
+    routes = _route_paths(app)
     assert "/" in routes

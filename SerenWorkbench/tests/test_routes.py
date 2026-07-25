@@ -3,6 +3,9 @@ Route tests — the HTTP surface via TestClient.
 
 Covers the info endpoints, tools, state toggles, config, logs, and the viewer.
 Auth tests live in test_auth.py.
+
+Counts assert >= 24: the full builtin surface. (The old >= 16 was written to
+the endswith-discovery bug that silently dropped 8 bare-TOOL_DEFINITION tools.)
 """
 from __future__ import annotations
 
@@ -20,8 +23,8 @@ def test_root_reports_service_and_counts(client):
     body = client.get("/").json()
     assert body["service"] == "SerenWorkbench"
     assert body["version"]
-    assert body["tools_count"] >= 16
-    assert body["builtin_count"] >= 16
+    assert body["tools_count"] >= 24
+    assert body["builtin_count"] >= 24
     assert body["dynamic_count"] == 0  # no YAML manifests in CI
 
 
@@ -29,7 +32,7 @@ def test_root_reports_service_and_counts(client):
 
 def test_list_tools_returns_schemas(client):
     body = client.get("/tools").json()
-    assert body["count"] >= 16
+    assert body["count"] >= 24
     for t in body["tools"]:
         assert "name" in t
         assert "description" in t
@@ -40,6 +43,17 @@ def test_list_tools_returns_schemas(client):
         for p in t["parameters"]:
             assert "name" in p
             assert "type" in p
+
+
+def test_list_tools_includes_recovered_defs(client):
+    """The 8 tools that shipped with a bare TOOL_DEFINITION global and were
+    silently dropped by the endswith() discovery check. Each name here is a
+    regression tripwire."""
+    names = {t["name"] for t in client.get("/tools").json()["tools"]}
+    for expected in ("get_current_time", "which_model", "get_cluster_status",
+                     "ensure_service_running", "wait_for_service",
+                     "get_recent_logs", "list_models", "get_self_context"):
+        assert expected in names, f"'{expected}' missing from /tools"
 
 
 # ── Tool State ──────────────────────────────────────────────────────────
@@ -94,10 +108,14 @@ def test_config_endpoint(client):
     assert "server" in data
     assert "tls" in data
     assert "dashboard" in data
+    assert "services" in data
     assert "tool_overrides" in data
     # Server should have port/host
     assert "port" in data["server"]
     assert "host" in data["server"]
+    # Services block carries the DI base URLs
+    assert "memory_url" in data["services"]
+    assert "runtime_host_url" in data["services"]
 
 
 # ── Logs ────────────────────────────────────────────────────────────────

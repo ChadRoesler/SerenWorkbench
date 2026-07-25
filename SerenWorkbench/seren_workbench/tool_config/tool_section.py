@@ -52,6 +52,13 @@ class ToolSection:
                 pass
         return fallback
 
+    # Pythonic alias — several call sites (wait_for_service,
+    # ensure_service_running) reach for get_float; keep both names so the
+    # C#-flavored get_double and the Python-flavored get_float are the
+    # same lenient getter.
+    def get_float(self, key: str, fallback: float) -> float:
+        return self.get_double(key, fallback)
+
     def get_bool(self, key: str, fallback: bool) -> bool:
         v = self._kv.get(key)
         if v is None:

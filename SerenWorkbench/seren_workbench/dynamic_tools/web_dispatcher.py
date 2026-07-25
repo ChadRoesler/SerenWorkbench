@@ -12,6 +12,12 @@
 #  PATH SUBSTITUTION is always scalar (URL-encode each param value).
 #
 #  BASE URL resolves: invoke.base_url > configuration.base_url > error.
+#
+#  HTTPX NOTE: AsyncClient.send() takes NO timeout kwarg (proven TypeError
+#  on httpx 0.28) — per-request timeout goes through client.request(...).
+#  We also build headers ONCE up front instead of poking req._content and
+#  rebuilding the Request (a private attr that reads b'' — not None — on a
+#  bodyless GET, which used to sneak Content-Type onto GETs).
 # ════════════════════════════════════════════════════════════════════════
 
 from __future__ import annotations
@@ -56,48 +62,35 @@ async def invoke_web(
     from urllib.parse import urljoin
     full_url = urljoin(base_url.rstrip("/") + "/", resolved_path.lstrip("/"))
 
-    # Build request
-    try:
-        req = httpx.Request(method=method, url=full_url)
-    except Exception as ex:
-        return _error(f"could not build request: {ex}")
-
     # Body for verbs that take one
-    if method in ("POST", "PUT", "PATCH"):
-        if invoke.body_template:
-            try:
-                body_json = substitute_json_body(invoke.body_template, args, param_types)
-            except Exception as ex:
-                return _error(
-                    f"body_template substitution failed: {ex}",
-                    hint="Check that string params live inside quotes in the template, "
-                    "and non-string params live outside quotes.",
-                )
-            req = httpx.Request(
-                method=method,
-                url=full_url,
-                content=body_json,
-                headers={"Content-Type": "application/json"},
+    body_json: Optional[str] = None
+    if method in ("POST", "PUT", "PATCH") and invoke.body_template:
+        try:
+            body_json = substitute_json_body(invoke.body_template, args, param_types)
+        except Exception as ex:
+            return _error(
+                f"body_template substitution failed: {ex}",
+                hint="Check that string params live inside quotes in the template, "
+                "and non-string params live outside quotes.",
             )
 
-    # Headers - per-tool
+    # Headers - built once: JSON content type only when a body exists,
+    # per-tool headers layered on top (they may override Content-Type).
+    headers: Dict[str, str] = {}
+    if body_json is not None:
+        headers["Content-Type"] = "application/json"
     if invoke.headers:
-        extra_headers = {}
-        for k, v in invoke.headers.items():
-            extra_headers[k] = v
-        if req._content is not None and "Content-Type" not in extra_headers:
-            extra_headers.setdefault("Content-Type", "application/json")
-        # Rebuild request with headers
-        req = httpx.Request(
-            method=method,
-            url=full_url,
-            content=req.content,
-            headers={**(req.headers or {}), **extra_headers},
-        )
+        headers.update(invoke.headers)
 
     # Make the call
     try:
-        resp = await http_client.send(req, timeout=DEFAULT_TIMEOUT_SECONDS)
+        resp = await http_client.request(
+            method,
+            full_url,
+            content=body_json,
+            headers=headers or None,
+            timeout=DEFAULT_TIMEOUT_SECONDS,
+        )
     except httpx.TimeoutException:
         return _error(
             f"tool '{tool_name}' web call timed out.",
@@ -110,10 +103,8 @@ async def invoke_web(
         )
 
     body = resp.text
-    truncated = False
     if len(body) > MAX_RESPONSE_CHARS:
         body = body[:MAX_RESPONSE_CHARS] + "\n…[response truncated]"
-        truncated = True
 
     if not resp.is_success:
         return _error(

@@ -113,7 +113,7 @@ class YamlDispatchedTool:
         kind = (self._entry.invoke.kind or "").strip().lower() if self._entry.invoke else ""
         try:
             if kind == "process":
-                result = invoke_process(
+                result = await invoke_process(
                     self._entry.invoke,
                     self._owner.configuration,
                     self.name,

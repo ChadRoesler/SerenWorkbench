@@ -12,7 +12,7 @@ from typing import Optional
 import httpx
 
 
-TOOL_DEFINITION = {
+GET_CLUSTER_STATUS_TOOL_DEF = {
     "name": "get_cluster_status",
     "description": (
         "Returns the full cluster topology from RuntimeHost. Use this "

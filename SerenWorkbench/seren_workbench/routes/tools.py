@@ -54,8 +54,8 @@ async def set_tool_state(request: Request):
         }
     """
     body = await request.json()
-    tool_name = body.get("tool", "").strip()
-    action_name = body.get("action", "").strip()
+    tool_name = str(body.get("tool") or "").strip()
+    action_name = str(body.get("action") or "").strip()
     enabled = body.get("enabled", True)
     reg = request.app.state.tool_registry
 

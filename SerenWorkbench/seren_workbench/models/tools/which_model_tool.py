@@ -13,7 +13,7 @@ from typing import Optional
 import httpx
 
 
-TOOL_DEFINITION = {
+WHICH_MODEL_TOOL_DEF = {
     "name": "which_model",
     "description": (
         "Returns the currently-loaded inference model (the GGUF file "

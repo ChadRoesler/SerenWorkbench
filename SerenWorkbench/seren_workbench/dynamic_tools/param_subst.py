@@ -20,6 +20,9 @@ from __future__ import annotations
 import json
 import re
 from typing import Dict
+# NOTE: __import__("urllib.parse") returns the TOP-LEVEL urllib module (which
+# has no .quote in py3) — a proven AttributeError. Import quote properly.
+from urllib.parse import quote
 
 _TOKEN_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
@@ -39,7 +42,7 @@ def substitute_scalar(
         if raw is None:
             return m.group(0)  # leave token intact
         s = _to_invariant_string(raw)
-        return __import__("urllib.parse").quote(s, safe="") if url_encode else s
+        return quote(s, safe="") if url_encode else s
 
     return _TOKEN_RE.sub(_replacer, template)
 

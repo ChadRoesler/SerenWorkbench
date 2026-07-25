@@ -1,6 +1,6 @@
-# ═══════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════
 #  seren-workbench.yaml - SerenWorkbench tool overrides (operator-tunable knobs).
-# ═══════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════
 #
 #  Everything here is OPTIONAL. Each tool ships with Nano-floor defaults at
 #  its CALL SITE (sane for an Orin Nano Super); this file is purely the
@@ -13,7 +13,7 @@
 #
 #  NOT for credentials: this file ships with the package. Keep tokens / API
 #  keys in environment variables or a chmod-600 .env, not in here.
-# ═══════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════
 
 server:
   host: 127.0.0.1
@@ -21,6 +21,31 @@ server:
                           # loci-nv 7422, scc-nv 7423, scc-v 7424,
                           # workbench 7425, probe 7430
   bearer_token: ""
+
+# ── Seren service base URLs (the DI targets) ─────────────────────────────
+# The builtin tools reach other Seren services through named httpx clients
+# built from these URLs. Defaults assume everything runs on this host at
+# the family ports; point them across the LAN for a split deploy.
+# Env overrides: SEREN_WORKBENCH_MEMORY_URL / _RUNTIME_HOST_URL /
+# _SEARXNG_URL / _SCHEDULER_URL.
+services:
+  memory_url: http://127.0.0.1:7420        # SerenMemory
+  runtime_host_url: http://127.0.0.1:6361  # SerenRuntimeHost (cluster head)
+  searxng_url: http://127.0.0.1:8080       # SearXNG metasearch
+  scheduler_url: http://127.0.0.1:6361     # scheduler surface (RuntimeHost today)
+  timeout_seconds: 15.0                    # per-request client timeout
+
+# ── Dashboard / tool-state seeding ───────────────────────────────────────
+# tools_disabled: these tools start DISABLED (survives restarts, unlike the
+#                 dashboard's in-memory toggles).
+# tools_enabled:  if non-empty, it is an ALLOWLIST — every tool NOT named
+#                 here starts disabled. Leave empty for everything-on.
+# tools_dir:      directory of dynamic-tool YAML manifests (plug-and-play).
+dashboard:
+  enabled: true
+  tools_dir: /opt/seren/tools
+  tools_enabled: []
+  tools_disabled: []
 
 tools:
   # -- search_the_web (WebTools.SearchTheWeb) --

@@ -50,8 +50,10 @@
     </div>
     <div class="note">
       <span class="label">enable/disable:</span>
-      toggle tools and their sub-actions on or off. Disabled tools are hidden from
-      the LLM's MCP tool surface. Changes apply immediately to the running server.
+      toggle tools and their sub-actions on or off. A disabled tool is refused at
+      call time — the LLM gets a clear "disabled by the operator" error immediately.
+      (Toggles here are in-memory and reset on restart; to persist a disable, add
+      the tool to dashboard.tools_disabled in seren-workbench.yaml.)
     </div>
     <div id="state-body" class="loading">loading…</div>
   </div>

@@ -12,6 +12,11 @@
 #  YAML, not JSON - matches RuntimeHost + agent.
 #
 #  LENIENT BY DESIGN (Postel)
+#
+#  PATH RESOLUTION: load() takes an explicit path first — the app threads
+#  the SAME resolved yaml that load_config() used, so the server block and
+#  the tools block always come from one file. The env / CWD chain is only
+#  the fallback for standalone use (tests, scripts).
 # ════════════════════════════════════════════════════════════════════════
 
 from __future__ import annotations
@@ -19,7 +24,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 
 import yaml
 
@@ -47,10 +52,13 @@ class McpConfig:
         return {k: dict(v) for k, v in self._tools.items()}
 
     @staticmethod
-    def load() -> "McpConfig":
-        path = os.environ.get("SEREN_WORKBENCH_CONFIG") or os.environ.get("MCP_CONFIG_PATH")
-        if not path:
-            path = str(Path(sys.argv[0]).parent / "seren-workbench.yaml")
+    def load(path: Optional[str] = None) -> "McpConfig":
+        # Explicit path (from load_config's resolved source) wins; then env;
+        # then a CWD-relative default — the SAME default load_config uses,
+        # so a zero-config run resolves both blocks from the same place.
+        path = path or os.environ.get("SEREN_WORKBENCH_CONFIG") \
+                    or os.environ.get("MCP_CONFIG_PATH") \
+                    or "seren-workbench.yaml"
 
         if not os.path.isfile(path):
             return McpConfig({}, f"(none - built-in defaults; looked at {path})")
