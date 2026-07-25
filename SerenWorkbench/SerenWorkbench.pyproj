@@ -73,7 +73,6 @@
     <Compile Include="seren_workbench\tool_config\tool_section.py" />
     <Compile Include="seren_workbench\tool_config\__init__.py" />
     <Compile Include="seren_workbench\tool_registry.py" />
-    <Compile Include="seren_workbench\_version.py" />
     <Compile Include="seren_workbench\__init__.py" />
     <Compile Include="seren_workbench\__main__.py" />
     <Compile Include="tests\conftest.py" />
