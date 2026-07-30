@@ -13,9 +13,15 @@ from typing import Optional
 import httpx
 
 
+# This module is the one place a MODULE-level TOOLBOX won't do: its three
+# tools belong in two different boxes. Reading the temporal posture of a
+# conversation is a self-awareness thing; pinning and promoting entries are
+# memory things. So each declares its own, which beats the module default.
+
 # TimeSinceLastMessage
 TIME_TOOL_DEF = {
     "name": "time_since_last_message",
+    "toolbox": "Time & Self",
     "description": (
         "Returns how long since the user last sent a message, in seconds. "
         "Use this to read the temporal posture of the conversation: "
@@ -33,6 +39,7 @@ TIME_TOOL_DEF = {
 # PreserveMemoryVerbatim
 PRESERVE_TOOL_DEF = {
     "name": "preserve_memory_verbatim",
+    "toolbox": "Memory",
     "description": (
         "Mark a short-term memory entry for VERBATIM promotion on the "
         "next consolidator cycle - no summarization, no fusion with "
@@ -54,6 +61,7 @@ PRESERVE_TOOL_DEF = {
 # PromoteMemoryNow
 PROMOTE_TOOL_DEF = {
     "name": "promote_memory_now",
+    "toolbox": "Memory",
     "description": (
         "Promote a short-term memory to durable long-term IMMEDIATELY, "
         "without waiting for the consolidator's next cycle. Requires the entry ID "

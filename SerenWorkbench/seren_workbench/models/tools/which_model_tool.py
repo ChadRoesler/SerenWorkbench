@@ -12,6 +12,11 @@ from typing import Optional
 
 import httpx
 
+# Which toolbox these land in on the dashboard. Derivation would put
+# this module in a box of its own; this says otherwise. Per-tool
+# "toolbox" keys in a TOOL_DEF override even this.
+TOOLBOX = "Time & Self"
+
 
 WHICH_MODEL_TOOL_DEF = {
     "name": "which_model",

@@ -69,12 +69,36 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
         mcp_config = _McpConfig.load(cfg.source_path)
         app.state.mcp_config = mcp_config
 
+        from .models.tools.proposal_tools import (
+            PROPOSE_TOOL_DEF, LIST_PROPOSALS_TOOL_DEF,
+        )
+        proposal_tool_names = {
+            PROPOSE_TOOL_DEF["name"], LIST_PROPOSALS_TOOL_DEF["name"],
+        }
+
         app.state.tool_registry = build_registry(
             mcp_config=mcp_config,
             tools_dir=cfg.dashboard.tools_dir,
             tools_enabled=cfg.dashboard.tools_enabled,
             tools_disabled=cfg.dashboard.tools_disabled,
+            exclude=set() if cfg.dashboard.proposals_enabled else proposal_tool_names,
         )
+
+        # ── Tool proposals ──────────────────────────────────────────────
+        # The staging store. Note what it is NOT given: any way to register
+        # a tool. It writes files into a directory the loader doesn't read,
+        # and approval lives behind an operator HTTP route with no MCP tool
+        # in front of it. live_names is a callable so the collision check
+        # asks the registry at the moment it matters.
+        if cfg.dashboard.proposals_enabled:
+            from .proposals import ProposalStore
+            app.state.proposals = ProposalStore(
+                proposals_dir=cfg.dashboard.resolve_proposals_dir(),
+                tools_dir=cfg.dashboard.tools_dir,
+                live_names=lambda: {t.name for t in app.state.tool_registry.all_tools()},
+            )
+        else:
+            app.state.proposals = None
 
         # Wire the tool audit log
         from .dynamic_tools.tool_audit_log import ToolAuditLog
@@ -101,6 +125,7 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
                 "searxng": await _client(svc.searxng_url),
                 "scheduler": await _client(svc.scheduler_url),
                 "config": mcp_config,
+                "proposals": app.state.proposals,
                 "_dynamic_web_client": _general,
             }
 
@@ -115,6 +140,40 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
             except Exception as exc:
                 mcp_server = None
                 print(f"[seren-workbench] MCP mount failed: {exc!r} — continuing without MCP")
+
+            # ── Live tool reload ────────────────────────────────────────
+            # The initial LoadResult is rebuilt from the ToolInfos the
+            # registry already holds rather than re-running the loader: a
+            # second load_directory() here would re-fetch every remote
+            # `from:` manifest at boot, doubling startup network work to
+            # recover data we already have in hand. Startup skip/warning
+            # detail is logged by build_registry's own load; the first
+            # reload repopulates it in the snapshot.
+            try:
+                from .dynamic_tools.dynamic_tool_registry import DynamicToolRegistry
+                from .dynamic_tools.manifest_loader import LoadResult
+                from .mcp.server import make_dynamic_registrar
+
+                seed = LoadResult()
+                seed.resolved_inline_tools = [
+                    (t.entry, t.owner, t.source)
+                    for t in app.state.tool_registry.dynamic_tools()
+                    if t.entry is not None
+                ]
+                app.state.dynamic_registry = DynamicToolRegistry(
+                    tools_dir=cfg.dashboard.tools_dir,
+                    initial_load=seed,
+                    tool_registry=app.state.tool_registry,
+                    mcp_server=mcp_server,
+                    register=make_dynamic_registrar(
+                        app.state.tool_registry,
+                        app.state.di_registry,
+                        app.state.audit_log,
+                    ),
+                )
+            except Exception as exc:
+                app.state.dynamic_registry = None
+                print(f"[seren-workbench] live tool reload unavailable: {exc!r}")
 
             # The streamable-HTTP transport needs its session manager's task
             # group entered explicitly.
@@ -164,6 +223,8 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
     # ── Route subpackage mounts ────────────────────────────────────────
     app.include_router(info_routes.router)
     app.include_router(tools_routes.router)
+    from .routes import proposals as proposal_routes
+    app.include_router(proposal_routes.router)
     app.include_router(config_routes.router)
     app.include_router(logs_routes.router)
 

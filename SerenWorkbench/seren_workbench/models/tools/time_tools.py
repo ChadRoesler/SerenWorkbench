@@ -11,6 +11,11 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone, timedelta
 
+# Which toolbox these land in on the dashboard. Derivation would put
+# this module in a box of its own; this says otherwise. Per-tool
+# "toolbox" keys in a TOOL_DEF override even this.
+TOOLBOX = "Time & Self"
+
 
 # NOTE the suffix: registry discovery matches attrs ENDING in _TOOL_DEF /
 # _TOOL_DEFINITION. The bare name TOOL_DEFINITION missed that check (no

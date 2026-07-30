@@ -53,6 +53,11 @@ async function refreshSummary() {
       pill.className = "status-pill ok";
       pill.textContent = `v${data.version} · ${data.tools_count} tools`;
     }
+    // A pip on the tab when something is waiting on you. Someone asked for a
+    // capability; that shouldn't need you to go looking for it.
+    const pip = document.getElementById("proposals-pip");
+    const n = data.pending_proposals || 0;
+    if (pip) { pip.hidden = n === 0; pip.textContent = String(n); }
   } catch (e) {
     if (pill) { pill.className = "status-pill err"; pill.textContent = "disconnected"; }
   }
@@ -74,12 +79,70 @@ async function refreshTools() {
 document.getElementById("tools-filter")?.addEventListener("input",
   e => renderTools(e.target.value));
 
+// ── Toolbox grouping (shared by Tools and Tool State) ─────────────
+// Builtins list as `Toolbox > tool`. Custom tools get one extra level —
+// `Custom Toolboxes > box > tool` — so a deployment with forty manifest
+// tools stays navigable instead of being one long scroll.
+//
+// Open/closed is remembered per tab+box. Re-rendering after a toggle
+// otherwise slams every group shut under whoever was reading it.
+const OPEN = new Set();
+function boxKey(tab, box) { return `${tab}::${box}`; }
+
+function groupByToolbox(list) {
+  const builtin = new Map(), custom = new Map();
+  for (const t of list) {
+    const target = t.type === "dynamic" ? custom : builtin;
+    const box = t.toolbox || "Other";
+    if (!target.has(box)) target.set(box, []);
+    target.get(box).push(t);
+  }
+  const sortBox = m => new Map([...m.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([k, v]) => [k, v.sort((x, y) =>
+      (x.display_name || x.name).localeCompare(y.display_name || y.name))]));
+  return { builtin: sortBox(builtin), custom: sortBox(custom) };
+}
+
+function matches(t, f) {
+  if (!f) return true;
+  return (t.name || "").toLowerCase().includes(f)
+      || (t.display_name || "").toLowerCase().includes(f)
+      || (t.description || "").toLowerCase().includes(f)
+      || (t.toolbox || "").toLowerCase().includes(f);
+}
+
+/** One collapsible group. `forced` opens it regardless (used while filtering,
+ *  because a filter that hides its own matches inside closed groups is worse
+ *  than no filter). */
+function groupHtml(tab, box, label, countLabel, inner, badges, forced) {
+  const open = forced || OPEN.has(boxKey(tab, box));
+  return `
+    <div class="tbox ${open ? "expanded" : ""}" data-box="${escapeHtml(boxKey(tab, box))}">
+      <div class="tbox-head">
+        <span class="caret">▸</span>
+        <span class="tbox-name">${escapeHtml(label)}</span>
+        ${badges || ""}
+        <span class="tbox-count">${escapeHtml(countLabel)}</span>
+      </div>
+      <div class="tbox-body">${inner}</div>
+    </div>`;
+}
+
+function wireGroups(root) {
+  root.querySelectorAll(".tbox-head").forEach(h =>
+    h.addEventListener("click", e => {
+      e.stopPropagation();
+      const g = h.parentElement;
+      g.classList.toggle("expanded");
+      const k = g.dataset.box;
+      g.classList.contains("expanded") ? OPEN.add(k) : OPEN.delete(k);
+    }));
+}
+
 function renderTools(filter) {
   const body = document.getElementById("tools-body");
   const f = (filter || "").trim().toLowerCase();
-  const filtered = !f ? TOOLS_DATA : TOOLS_DATA.filter(t =>
-    t.name.toLowerCase().includes(f) ||
-    (t.description || "").toLowerCase().includes(f));
+  const filtered = TOOLS_DATA.filter(t => matches(t, f));
   body.className = "";
   if (filtered.length === 0) {
     body.innerHTML = `<div class="empty">${
@@ -87,41 +150,73 @@ function renderTools(filter) {
                         : "no tools registered"}</div>`;
     return;
   }
-  body.innerHTML = filtered.map(toolCardHtml).join("");
+  const { builtin, custom } = groupByToolbox(filtered);
+  let html = "";
+  for (const [box, tools] of builtin) {
+    html += groupHtml("tools", box, `${box} Toolbox`,
+      `${tools.length} tool${tools.length === 1 ? "" : "s"}`,
+      tools.map(t => toolCardHtml(t, false)).join(""),
+      `<span class="badge builtin">built in</span>`, !!f);
+  }
+  if (custom.size) {
+    let inner = "";
+    for (const [box, tools] of custom) {
+      inner += groupHtml("tools-custom", box, box,
+        `${tools.length} tool${tools.length === 1 ? "" : "s"}`,
+        tools.map(t => toolCardHtml(t, false)).join(""), "", !!f);
+    }
+    const total = [...custom.values()].reduce((n, v) => n + v.length, 0);
+    html += groupHtml("tools", "__custom__", "Custom Toolboxes",
+      `${custom.size} box${custom.size === 1 ? "" : "es"} · ${total} tool${total === 1 ? "" : "s"}`,
+      inner, "", !!f);
+  }
+  body.innerHTML = html;
+  wireGroups(body);
   body.querySelectorAll(".card-head").forEach(h =>
-    h.addEventListener("click", () => h.parentElement.classList.toggle("expanded")));
+    h.addEventListener("click", e => {
+      e.stopPropagation();
+      h.parentElement.classList.toggle("expanded");
+    }));
+}
+
+function paramsTableHtml(params) {
+  if (!params || params.length === 0)
+    return `<div class="no-params">no parameters</div>`;
+  return `<table class="params">
+       <thead><tr><th>name</th><th>type</th><th>required</th><th>default</th><th>description</th></tr></thead>
+       <tbody>${params.map(p => `
+         <tr>
+           <td class="pname">${escapeHtml(p.name)}</td>
+           <td class="ptype">${escapeHtml(p.type || "")}</td>
+           <td class="preq">${p.required ? "yes" : "—"}</td>
+           <td class="pdef">${p.default == null ? "—" : escapeHtml(String(p.default))}</td>
+           <td class="pdesc">${escapeHtml(p.description || "")}</td>
+         </tr>`).join("")}</tbody>
+     </table>`;
 }
 
 function toolCardHtml(t) {
-  const badge = `<span class="badge ${t.type}">${escapeHtml(t.type)}</span>`;
+  // The HEAD carries the human name; the raw callable name lives inside,
+  // next to its source file. Someone auditing needs the identifier, but
+  // they shouldn't have to read snake_case to find the tool first.
   const enabledBadge = t.enabled
     ? `<span class="badge ok">enabled</span>`
     : `<span class="badge disabled">disabled</span>`;
-  const params = t.parameters || [];
-  const paramsHtml = params.length === 0
-    ? `<div class="no-params">no parameters</div>`
-    : `<table class="params">
-         <thead><tr><th>name</th><th>type</th><th>required</th><th>default</th><th>description</th></tr></thead>
-         <tbody>${params.map(p => `
-           <tr>
-             <td class="pname">${escapeHtml(p.name)}</td>
-             <td class="ptype">${escapeHtml(p.type || "")}</td>
-             <td class="preq">${p.required ? "yes" : "—"}</td>
-             <td class="pdef">${p.default == null ? "—" : escapeHtml(String(p.default))}</td>
-             <td class="pdesc">${escapeHtml(p.description || "")}</td>
-           </tr>`).join("")}</tbody>
-       </table>`;
+  const typeBadge = `<span class="badge ${t.type}">${escapeHtml(t.type)}</span>`;
   return `
     <div class="tool-card">
       <div class="card-head">
         <span class="caret">▸</span>
-        <span class="name">${escapeHtml(t.name)}</span>
-        ${badge} ${enabledBadge}
-        <span class="src">${escapeHtml(t.source || "")}</span>
+        <span class="name">${escapeHtml(t.display_name || t.name)}</span>
+        ${enabledBadge} ${typeBadge}
       </div>
       <div class="card-body">
+        <div class="ident">
+          <code class="raw-name">${escapeHtml(t.name)}</code>
+          <span class="src">${escapeHtml(t.source || "")}</span>
+        </div>
         <div class="desc">${escapeHtml(t.description || "(no description)")}</div>
-        ${paramsHtml}
+        ${paramsTableHtml(t.parameters)}
       </div>
     </div>`;
 }
@@ -146,18 +241,48 @@ document.getElementById("state-filter")?.addEventListener("input",
 function renderState(filter) {
   const body = document.getElementById("state-body");
   const f = (filter || "").trim().toLowerCase();
-  const filtered = !f ? STATE_DATA.tools : STATE_DATA.tools.filter(t =>
-    t.name.toLowerCase().includes(f));
+  const filtered = (STATE_DATA.tools || []).filter(t => matches(t, f));
   body.className = "";
   if (filtered.length === 0) {
     body.innerHTML = `<div class="empty">${
-      STATE_DATA.tools.length ? `no tools match "${escapeHtml(f)}"`
-                              : "no tools registered"}</div>`;
+      (STATE_DATA.tools || []).length ? `no tools match "${escapeHtml(f)}"`
+                                      : "no tools registered"}</div>`;
     return;
   }
-  body.innerHTML = filtered.map(stateCardHtml).join("");
+  // Same hierarchy as the Tools tab, on purpose — the toggle for a tool
+  // should be exactly where you just saw the tool.
+  const { builtin, custom } = groupByToolbox(filtered);
+  const off = list => list.filter(t => !t.enabled).length;
+  const tag = list => {
+    const n = off(list);
+    return n ? `<span class="badge disabled">${n} off</span>` : "";
+  };
+  let html = "";
+  for (const [box, tools] of builtin) {
+    html += groupHtml("state", box, `${box} Toolbox`,
+      `${tools.length} tool${tools.length === 1 ? "" : "s"}`,
+      tools.map(stateCardHtml).join(""),
+      `<span class="badge builtin">built in</span>${tag(tools)}`, !!f);
+  }
+  if (custom.size) {
+    let inner = "";
+    for (const [box, tools] of custom) {
+      inner += groupHtml("state-custom", box, box,
+        `${tools.length} tool${tools.length === 1 ? "" : "s"}`,
+        tools.map(stateCardHtml).join(""), tag(tools), !!f);
+    }
+    const all = [...custom.values()].flat();
+    html += groupHtml("state", "__custom__", "Custom Toolboxes",
+      `${custom.size} box${custom.size === 1 ? "" : "es"} · ${all.length} tool${all.length === 1 ? "" : "s"}`,
+      inner, tag(all), !!f);
+  }
+  body.innerHTML = html;
+  wireGroups(body);
   body.querySelectorAll(".state-head").forEach(h =>
-    h.addEventListener("click", () => h.parentElement.classList.toggle("expanded")));
+    h.addEventListener("click", e => {
+      e.stopPropagation();
+      h.parentElement.classList.toggle("expanded");
+    }));
   body.querySelectorAll(".toggle-switch input").forEach(input =>
     input.addEventListener("change", handleToggle));
 }
@@ -184,10 +309,14 @@ function stateCardHtml(t) {
     <div class="state-card">
       <div class="state-head">
         <span class="state-caret">▸</span>
-        <span class="state-name">${escapeHtml(t.name)}</span>
+        <span class="state-name">${escapeHtml(t.display_name || t.name)}</span>
         ${badge}
       </div>
       <div class="state-body">
+        <div class="ident">
+          <code class="raw-name">${escapeHtml(t.name)}</code>
+          <span class="src">${escapeHtml(t.source || "")}</span>
+        </div>
         <div class="toggle-row toggle-row-primary">
           <label class="toggle-switch">
             <input type="checkbox" ${t.enabled ? "checked" : ""}
@@ -221,6 +350,143 @@ async function handleToggle(e) {
     input.checked = !enabled;    // network/HTTP error — revert
     console.error("toggle error:", err);
   }
+}
+
+// ── Proposals panel ──────────────────────────────────────────────
+// The approvals queue. Two gates: approve INSTALLS (disabled), then the
+// operator enables on the Tool State tab. Reject demands a critique,
+// because a bare refusal gives the proposer nothing to revise against.
+let PROPOSALS = [];
+async function refreshProposals() {
+  const body = document.getElementById("proposals-body");
+  if (!body) return;
+  setLoading(body);
+  const status = document.getElementById("proposals-status")?.value ?? "pending";
+  try {
+    const data = await api("/proposals" + (status ? `?status=${encodeURIComponent(status)}` : ""));
+    PROPOSALS = data.proposals || [];
+    document.getElementById("proposals-info").textContent =
+      `${PROPOSALS.length} shown · ${data.pending ?? 0} pending`;
+    renderProposals();
+  } catch (e) {
+    // 503 = proposals disabled by config. That's a state, not a failure.
+    if (/503/.test(e.message || "")) {
+      body.className = "";
+      body.innerHTML = `<div class="empty">tool proposals are disabled
+        (dashboard.proposals_enabled)</div>`;
+      return;
+    }
+    showError(body, e);
+  }
+}
+document.getElementById("proposals-status")?.addEventListener("change", refreshProposals);
+
+function renderProposals() {
+  const body = document.getElementById("proposals-body");
+  body.className = "";
+  if (PROPOSALS.length === 0) {
+    body.innerHTML = `<div class="empty">nothing waiting — no tools have been
+      proposed</div>`;
+    return;
+  }
+  body.innerHTML = PROPOSALS.map(proposalCardHtml).join("");
+  body.querySelectorAll(".prop-head").forEach(h =>
+    h.addEventListener("click", () => h.parentElement.classList.toggle("expanded")));
+  body.querySelectorAll("[data-approve]").forEach(b =>
+    b.addEventListener("click", () => actOn(b.dataset.approve, "approve")));
+  body.querySelectorAll("[data-reject]").forEach(b =>
+    b.addEventListener("click", () => actOn(b.dataset.reject, "reject")));
+  body.querySelectorAll("[data-detail]").forEach(b =>
+    b.addEventListener("click", () => loadDetail(b.dataset.detail)));
+}
+
+function proposalCardHtml(p) {
+  const cls = { pending: "kind", approved: "ok", rejected: "err",
+                superseded: "disabled" }[p.status] || "kind";
+  const attempt = p.attempt > 1 ? `<span class="badge kind">attempt ${p.attempt}</span>` : "";
+  const critique = p.critique
+    ? `<div class="note err"><span class="label">your critique:</span>
+         ${escapeHtml(p.critique)}</div>` : "";
+  const controls = p.status === "pending" ? `
+      <div class="prop-actions">
+        <button class="btn-approve" data-approve="${escapeHtml(p.id)}">approve → install (disabled)</button>
+        <button class="btn-reject" data-reject="${escapeHtml(p.id)}">reject with critique</button>
+      </div>` : "";
+  return `
+    <div class="tool-card prop-card" id="card-${escapeHtml(p.id)}">
+      <div class="card-head prop-head">
+        <span class="caret">▸</span>
+        <span class="name">${escapeHtml((p.tool_names || []).join(", ") || "(unnamed)")}</span>
+        <span class="badge ${cls}">${escapeHtml(p.status)}</span>
+        ${attempt}
+        <span class="src">${escapeHtml(p.id)}</span>
+      </div>
+      <div class="card-body">
+        <div class="desc"><span class="label">why:</span> ${escapeHtml(p.rationale || "")}</div>
+        ${critique}
+        <div class="prop-detail" id="detail-${escapeHtml(p.id)}">
+          <button data-detail="${escapeHtml(p.id)}">show what it would run ▾</button>
+        </div>
+        ${controls}
+      </div>
+    </div>`;
+}
+
+async function loadDetail(pid) {
+  const host = document.getElementById(`detail-${pid}`);
+  host.innerHTML = `<div class="loading">loading…</div>`;
+  try {
+    const p = await api(`/proposals/${encodeURIComponent(pid)}`);
+    const effects = (p.effects || []).map(e => {
+      const what = e.kind === "process"
+        ? `<div class="eff-runs"><span class="label">runs:</span>
+             <code>${escapeHtml((e.runs || []).join(" "))}</code></div>`
+        : `<div class="eff-runs"><span class="label">calls:</span>
+             <code>${escapeHtml(e.calls || "")}</code></div>`;
+      const loud = e.executes_a_binary
+        ? `<div class="note err">${escapeHtml(e.review_note || "")}</div>` : "";
+      const params = (e.parameters || []).map(x =>
+        `<li><code>${escapeHtml(x.name)}</code> <span class="ptype">${escapeHtml(x.type)}</span>
+           ${x.constrained ? `<span class="badge ok">constrained</span>`
+                           : `<span class="badge disabled">unconstrained</span>`}</li>`).join("");
+      return `<div class="effect">
+        <div class="eff-head"><strong>${escapeHtml(e.tool)}</strong>
+          <span class="badge kind">${escapeHtml(e.kind)}</span></div>
+        ${what}${loud}
+        ${params ? `<ul class="eff-params">${params}</ul>`
+                 : `<div class="no-params">no parameters</div>`}
+      </div>`;
+    }).join("");
+    host.innerHTML = `${effects}
+      <details class="manifest"><summary>full manifest</summary>
+        <pre>${escapeHtml(p.manifest || "")}</pre></details>`;
+  } catch (e) { showError(host, e); }
+}
+
+async function actOn(pid, action) {
+  let bodyJson;
+  if (action === "reject") {
+    const critique = window.prompt(
+      "Why are you rejecting this? The proposer reads this and revises against it.");
+    if (critique === null) return;              // cancelled
+    if (!critique.trim()) { window.alert("A critique is required."); return; }
+    bodyJson = JSON.stringify({ critique });
+  }
+  try {
+    const data = await api(`/proposals/${encodeURIComponent(pid)}/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: bodyJson,
+    });
+    if (data && data.ok === false) { window.alert(data.error || "refused"); }
+    else if (action === "approve" && data?.next_step) { window.alert(data.next_step); }
+  } catch (e) {
+    window.alert("failed: " + (e.message || e));
+  }
+  // An approval changes the tool list and the state list too.
+  refreshProposals(); refreshSummary();
+  if (_loaded.tools) refreshTools();
+  if (_loaded.state) refreshState();
 }
 
 // ── Config panel ─────────────────────────────────────────────────
@@ -335,6 +601,7 @@ function logRowHtml(e) {
 // ── Init ─────────────────────────────────────────────────────────
 const REFRESH = {
   tools: refreshTools,
+  proposals: refreshProposals,
   config: refreshConfig,
   state: refreshState,
   logs: refreshLogs,

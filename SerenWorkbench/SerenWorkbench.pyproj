@@ -23,6 +23,9 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
+    <Folder Include="docs\" />
+    <Folder Include="examples\" />
+    <Folder Include="examples\tools\" />
     <Folder Include="seren_workbench\" />
     <Folder Include="seren_workbench\dynamic_tools\" />
     <Folder Include="seren_workbench\mcp\" />
@@ -30,7 +33,6 @@
     <Folder Include="seren_workbench\models\tools\" />
     <Folder Include="seren_workbench\routes\" />
     <Folder Include="seren_workbench\tool_config\" />
-    <Folder Include="seren_workbench\tool_config\__pycache__\" />
     <Folder Include="seren_workbench\viewer\" />
     <Folder Include="seren_workbench\viewer\ui\" />
     <Folder Include="tests\" />
@@ -56,6 +58,7 @@
     <Compile Include="seren_workbench\models\tools\log_tools.py" />
     <Compile Include="seren_workbench\models\tools\memory_tools.py" />
     <Compile Include="seren_workbench\models\tools\model_tools.py" />
+    <Compile Include="seren_workbench\models\tools\proposal_tools.py" />
     <Compile Include="seren_workbench\models\tools\scheduler_tools.py" />
     <Compile Include="seren_workbench\models\tools\self_tools.py" />
     <Compile Include="seren_workbench\models\tools\service_control_tools.py" />
@@ -64,9 +67,11 @@
     <Compile Include="seren_workbench\models\tools\web_tools.py" />
     <Compile Include="seren_workbench\models\tools\which_model_tool.py" />
     <Compile Include="seren_workbench\models\tools\__init__.py" />
+    <Compile Include="seren_workbench\proposals.py" />
     <Compile Include="seren_workbench\routes\config.py" />
     <Compile Include="seren_workbench\routes\info.py" />
     <Compile Include="seren_workbench\routes\logs.py" />
+    <Compile Include="seren_workbench\routes\proposals.py" />
     <Compile Include="seren_workbench\routes\tools.py" />
     <Compile Include="seren_workbench\routes\__init__.py" />
     <Compile Include="seren_workbench\tool_config\mcp_config.py" />
@@ -77,24 +82,26 @@
     <Compile Include="seren_workbench\__main__.py" />
     <Compile Include="tests\conftest.py" />
     <Compile Include="tests\test_auth.py" />
+    <Compile Include="tests\test_dynamic_tools.py" />
     <Compile Include="tests\test_mcp_endpoint.py" />
     <Compile Include="tests\test_mcp_mount.py" />
+    <Compile Include="tests\test_proposals.py" />
     <Compile Include="tests\test_routes.py" />
     <Compile Include="tests\test_smoke.py" />
+    <Compile Include="tests\test_toolboxes.py" />
+    <Compile Include="tests\test_tool_constraints.py" />
     <Compile Include="tests\test_tool_registry.py" />
+    <Compile Include="tests\test_tool_reload.py" />
     <Compile Include="tests\__init__.py" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="docs\TOOL-MANIFESTS.md" />
+    <Content Include="docs\TOOL-PROPOSALS.md" />
+    <Content Include="examples\tools\example-tool.yaml" />
     <Content Include="LICENSE" />
     <Content Include="pyproject.toml" />
     <Content Include="README.md" />
     <Content Include="seren-workbench.yaml.sample" />
-    <Content Include="seren_workbench\tool_config\__pycache__\mcp_config.cpython-311.pyc" />
-    <Content Include="seren_workbench\tool_config\__pycache__\mcp_config.cpython-312.pyc" />
-    <Content Include="seren_workbench\tool_config\__pycache__\tool_section.cpython-311.pyc" />
-    <Content Include="seren_workbench\tool_config\__pycache__\tool_section.cpython-312.pyc" />
-    <Content Include="seren_workbench\tool_config\__pycache__\__init__.cpython-311.pyc" />
-    <Content Include="seren_workbench\tool_config\__pycache__\__init__.cpython-312.pyc" />
     <Content Include="seren_workbench\viewer\ui\body.html" />
     <Content Include="seren_workbench\viewer\ui\header_aside.html" />
     <Content Include="seren_workbench\viewer\ui\scripts.js" />
