@@ -9,11 +9,20 @@
 #                            routes to ProcessDispatcher or WebDispatcher
 #
 #  AUDIT LOG: every dispatch writes an audit entry.
+#
+#  VALIDATION IS FAIL-CLOSED. The loader is deliberately lenient (Postel) —
+#  a malformed manifest is skipped, not fatal. Per-ARGUMENT validation is
+#  the opposite, on purpose: these values come from the model and land in
+#  argv slots and URL paths. A constraint that silently evaporates because
+#  its regex didn't compile is worse than no constraint, because the
+#  manifest author believes they have one. So a bad `pattern:` doesn't get
+#  dropped with a warning - it refuses the parameter until it's fixed.
 # ════════════════════════════════════════════════════════════════════════
 
 from __future__ import annotations
 
 import json
+import re
 import sys
 import time
 from pathlib import Path
@@ -46,6 +55,13 @@ class YamlDispatchedTool:
         self._http_client = http_client
         self._audit_log = audit_log
         self._param_types = self._build_param_types(entry)
+        # Compile every `pattern:` ONCE, here, rather than per call. Failures
+        # are kept (not raised) so one broken regex disables one parameter
+        # instead of taking the whole registry down at startup.
+        self._patterns, self._pattern_errors = self._compile_patterns(entry)
+        self._is_process = bool(
+            entry.invoke and (entry.invoke.kind or "").strip().lower() == "process"
+        )
 
     # -- MCP tool interface --
 
@@ -79,6 +95,12 @@ class YamlDispatchedTool:
                 prop["minimum"] = p.min
             if p.max is not None:
                 prop["maximum"] = p.max
+            # PUBLISH the string constraints. A rule the caller can't read is
+            # a rule it breaks blind; in the schema it's a contract instead.
+            if p.pattern:
+                prop["pattern"] = p.pattern
+            if p.enum:
+                prop["enum"] = list(p.enum)
             properties[p.name] = prop
             if p.required:
                 required.append(p.name)
@@ -159,35 +181,88 @@ class YamlDispatchedTool:
             if not param.name:
                 continue
 
-            if param.name in raw:
-                raw_val = raw[param.name]
-                if raw_val is not None:
-                    coerced, err = self._try_coerce(raw_val, param.type or "string")
-                    if err:
-                        return {}, f"parameter '{param.name}': {err}"
-                    if not self._check_range(param, coerced, err):
-                        # _check_range returns False + sets err via closure - recheck
-                        range_err = self._range_error(param, coerced)
-                        if range_err:
-                            return {}, f"parameter '{param.name}': {range_err}"
-                    result[param.name] = coerced
-                elif param.required:
+            # A pattern that didn't compile disables the parameter outright.
+            # Fail loud and closed - see the fail-closed note in the header.
+            bad_pattern = self._pattern_errors.get(param.name)
+            if bad_pattern is not None:
+                return {}, (
+                    f"parameter '{param.name}' has an invalid pattern in the "
+                    f"manifest ({bad_pattern}); refusing to run until it is fixed."
+                )
+
+            supplied = param.name in raw and raw[param.name] is not None
+            source = "" if supplied else " default"
+            value = raw[param.name] if supplied else param.default
+
+            if not supplied and value is None:
+                if param.required:
                     return {}, f"parameter '{param.name}' is required."
-                elif param.default is not None:
-                    coerced, err = self._try_coerce(param.default, param.type or "string")
-                    if err:
-                        return {}, f"parameter '{param.name}' default: {err}"
-                    result[param.name] = coerced
-            elif param.required:
-                return {}, f"parameter '{param.name}' is required."
-            elif param.default is not None:
-                coerced, err = self._try_coerce(param.default, param.type or "string")
-                if err:
-                    return {}, f"parameter '{param.name}' default: {err}"
-                result[param.name] = coerced
-            # else: optional + no default + not supplied => omit
+                continue  # optional + no default + not supplied => omit
+
+            coerced, err = self._try_coerce(value, param.type or "string")
+            if err:
+                return {}, f"parameter '{param.name}'{source}: {err}"
+
+            err = self._constraint_error(param, coerced)
+            if err:
+                return {}, f"parameter '{param.name}'{source}: {err}"
+
+            result[param.name] = coerced
 
         return result, None
+
+    # -- Constraint gate --
+
+    def _constraint_error(self, param: ToolParameter, value: object) -> Optional[str]:
+        """Every per-value rule, in one place. None means the value is fine.
+
+        One function rather than the old check/report pair: two functions
+        computing the same predicate is where drift lives, and the drift
+        would land on the permissive side without anything going red.
+        """
+        # -- enum: closed set, compared on the coerced value --
+        if param.enum:
+            if value not in param.enum:
+                allowed = ", ".join(repr(v) for v in param.enum)
+                return f"value {value!r} is not one of the permitted values: {allowed}"
+
+        # -- numeric bounds --
+        if param.min is not None or param.max is not None:
+            try:
+                numeric = float(value)  # type: ignore[arg-type]
+            except (ValueError, TypeError):
+                numeric = None
+            if numeric is not None:
+                if param.min is not None and numeric < param.min:
+                    return f"value {numeric} below min {param.min}"
+                if param.max is not None and numeric > param.max:
+                    return f"value {numeric} above max {param.max}"
+
+        # -- string rules --
+        if isinstance(value, str):
+            rx = self._patterns.get(param.name or "")
+            if rx is not None and not rx.fullmatch(value):
+                return (
+                    f"value does not match the required pattern "
+                    f"{param.pattern!r} (the whole value must match)"
+                )
+
+            # CWE-88: a value that becomes a flag. Only argv is at risk -
+            # a web query string starting with '-' is inert, and refusing it
+            # there would break legitimate tools for no gain.
+            if (
+                self._is_process
+                and value.startswith("-")
+                and not param.allow_leading_dash
+            ):
+                return (
+                    "value starts with '-', which the spawned program would read "
+                    "as a flag rather than data. Put a literal '--' in argv before "
+                    "this slot, or set allow_leading_dash: true on the parameter "
+                    "if it is genuinely meant to carry flags."
+                )
+
+        return None
 
     @staticmethod
     def _try_coerce(value: Any, declared_type: str) -> Tuple[object, Optional[str]]:
@@ -216,36 +291,34 @@ class YamlDispatchedTool:
         except (ValueError, TypeError) as ex:
             return None, str(ex)
 
-    @staticmethod
-    def _check_range(param: ToolParameter, value: object, _previous_err: Optional[str]) -> bool:
-        # Range check only for numeric types
-        if param.min is None and param.max is None:
-            return True
-        if value is None:
-            return True
-        try:
-            numeric = float(value)  # type: ignore
-        except (ValueError, TypeError):
-            return True
-        if param.min is not None and numeric < param.min:
-            return False
-        if param.max is not None and numeric > param.max:
-            return False
-        return True
-
-    @staticmethod
-    def _range_error(param: ToolParameter, value: object) -> Optional[str]:
-        try:
-            numeric = float(value)  # type: ignore
-        except (ValueError, TypeError):
-            return None
-        if param.min is not None and numeric < param.min:
-            return f"value {numeric} below min {param.min}"
-        if param.max is not None and numeric > param.max:
-            return f"value {numeric} above max {param.max}"
-        return None
-
     # -- Protocol tool construction --
+
+    @staticmethod
+    def _compile_patterns(
+        entry: ToolEntry,
+    ) -> Tuple[Dict[str, "re.Pattern[str]"], Dict[str, str]]:
+        """Compile each parameter's `pattern:` once at construction.
+
+        Returns (compiled, errors) keyed by parameter name. A regex that
+        won't compile lands in `errors` and is enforced as a hard refusal at
+        call time, NOT quietly discarded.
+        """
+        compiled: Dict[str, "re.Pattern[str]"] = {}
+        errors: Dict[str, str] = {}
+        for p in (entry.parameters or []):
+            if not p.name or not p.pattern:
+                continue
+            try:
+                compiled[p.name] = re.compile(p.pattern)
+            except re.error as ex:
+                errors[p.name] = str(ex)
+                print(
+                    f"[mcp-registry] tool '{entry.name}': parameter '{p.name}' has an "
+                    f"uncompilable pattern {p.pattern!r} ({ex}); the parameter is "
+                    "refused until the manifest is fixed",
+                    file=sys.stderr,
+                )
+        return compiled, errors
 
     @staticmethod
     def _build_param_types(entry: ToolEntry) -> Dict[str, str]:

@@ -309,6 +309,7 @@ def _dict_to_manifest(d: dict | None) -> ManifestFile:
                     meta.authors.append(ManifestAuthor(
                         name=a.get("name"), contact=a.get("contact")))
         meta.other = md.get("other")
+        meta.toolbox = md.get("toolbox")
         mf.metadata = meta
 
     cfg = d.get("configuration")
@@ -325,6 +326,8 @@ def _dict_to_manifest(d: dict | None) -> ManifestFile:
             entry = ToolEntry()
             entry.name = t.get("name")
             entry.description = t.get("description")
+            entry.display_name = t.get("display_name")
+            entry.toolbox = t.get("toolbox")
             entry.test = t.get("test")
             entry.from_ = t.get("from")
             entry.overrides = _parse_overrides(t.get("overrides"))
@@ -366,6 +369,9 @@ def _parse_parameters(raw: list | None) -> list | None:
         tp.default = p.get("default")
         tp.min = p.get("min")
         tp.max = p.get("max")
+        tp.pattern = p.get("pattern")
+        tp.enum = p.get("enum") if isinstance(p.get("enum"), list) else None
+        tp.allow_leading_dash = p.get("allow_leading_dash")
         params.append(tp)
     return params
 

@@ -76,11 +76,19 @@ async def invoke_web(
 
     # Headers - built once: JSON content type only when a body exists,
     # per-tool headers layered on top (they may override Content-Type).
+    #
+    # Header VALUES substitute too. They used to be the one templated field
+    # that didn't, so `Authorization: "Bearer {token}"` sent the four
+    # characters "{tok..." literally - no error, no warning, just a 401 from
+    # the far end and nothing anywhere to explain it. Header names are left
+    # alone deliberately: a templated header NAME is not a real use case and
+    # allowing it would let a parameter value inject a header.
     headers: Dict[str, str] = {}
     if body_json is not None:
         headers["Content-Type"] = "application/json"
     if invoke.headers:
-        headers.update(invoke.headers)
+        for hname, hvalue in invoke.headers.items():
+            headers[hname] = substitute_scalar(str(hvalue), args)
 
     # Make the call
     try:

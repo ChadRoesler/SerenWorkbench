@@ -36,11 +36,15 @@ import httpx
 from fastapi import FastAPI
 
 from ..tool_config.mcp_config import McpConfig
+from ..proposals import ProposalStore
 
 logger = logging.getLogger(__name__)
 
 # Annotation types that are dependency-injected, never exposed in schemas.
-_DI_TYPES = (httpx.AsyncClient, McpConfig)
+# ProposalStore is here for the same reason the httpx clients are: propose_tool
+# needs it, and a DI param that ISN'T listed here leaks into the LLM-visible
+# schema as a phantom argument the model then tries to supply.
+_DI_TYPES = (httpx.AsyncClient, McpConfig, ProposalStore)
 
 
 def _is_di_annotation(ann) -> bool:
@@ -61,7 +65,7 @@ def _is_di_annotation(ann) -> bool:
 
 
 def mount_mcp_routes(app: FastAPI):
-    """Mount the SerenMcp MCP server onto an existing FastAPI app.
+    """Mount the SerenWorkbench MCP server onto an existing FastAPI app.
 
     Reads app.state.tool_registry and app.state.di_registry (set by the
     lifespan handler) to wire tools to the MCP surface. Returns the FastMCP
@@ -269,14 +273,13 @@ _JSON_TYPE_MAP = {
 }
 
 
-def _register_dynamic_tools(mcp, registry, di_registry, audit_log=None) -> None:
-    """Register every dynamic tool via YamlDispatchedTool.
+def make_dynamic_registrar(registry, di_registry, audit_log=None):
+    """Return ``callable(mcp, tool_info)`` that registers ONE dynamic tool.
 
-    The registry carries each dynamic tool's ToolEntry + owning manifest.
-    We build the dispatcher once per tool, then register a wrapper whose
-    signature mirrors the manifest's parameter list (so FastMCP generates
-    the right schema) and whose body routes through YamlDispatchedTool.call
-    — validation, coercion, range checks, audit, process/web dispatch.
+    Both startup and live reload go through this, so a tool added at 3am by
+    a reload is built by the exact code that built the ones present at boot.
+    The alternative — a second registration path for the reload case — is
+    the duplicate-source-of-truth bug waiting to be written.
     """
     from ..dynamic_tools.yaml_dispatched_tool import YamlDispatchedTool
     from ..dynamic_tools.tool_audit_log import ToolAuditLog
@@ -286,19 +289,35 @@ def _register_dynamic_tools(mcp, registry, di_registry, audit_log=None) -> None:
     web_client = di_registry.get("_dynamic_web_client")
     if web_client is None:
         web_client = httpx.AsyncClient()
+    log = audit_log if audit_log is not None else ToolAuditLog()
 
-    for tool in registry.all_tools():
+    def _register_one(mcp, tool) -> None:
         if tool.type != "dynamic" or tool.entry is None:
-            continue
-
+            return
         dispatched = YamlDispatchedTool(
             entry=tool.entry,
             owner=tool.owner,
             source_path=tool.source,
             http_client=web_client,
-            audit_log=audit_log if audit_log is not None else ToolAuditLog(),
+            audit_log=log,
         )
         _register_dispatched(mcp, dispatched, tool, registry)
+
+    return _register_one
+
+
+def _register_dynamic_tools(mcp, registry, di_registry, audit_log=None) -> None:
+    """Register every dynamic tool via YamlDispatchedTool.
+
+    The registry carries each dynamic tool's ToolEntry + owning manifest.
+    We build the dispatcher once per tool, then register a wrapper whose
+    signature mirrors the manifest's parameter list (so FastMCP generates
+    the right schema) and whose body routes through YamlDispatchedTool.call
+    — validation, coercion, constraint checks, audit, process/web dispatch.
+    """
+    register_one = make_dynamic_registrar(registry, di_registry, audit_log)
+    for tool in registry.all_tools():
+        register_one(mcp, tool)
 
 
 def _register_dispatched(mcp, dispatched, tool, registry) -> None:

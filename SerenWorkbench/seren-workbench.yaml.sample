@@ -41,11 +41,21 @@ services:
 # tools_enabled:  if non-empty, it is an ALLOWLIST — every tool NOT named
 #                 here starts disabled. Leave empty for everything-on.
 # tools_dir:      directory of dynamic-tool YAML manifests (plug-and-play).
+# proposals_enabled: lets the model ask for new tools via propose_tool. A
+#                    proposal is written to proposals_dir, which NOTHING
+#                    loads - it only becomes callable when an operator
+#                    approves it through POST /proposals/{id}/approve.
+#                    false removes the tool entirely rather than leaving it
+#                    to fail on every call. See docs/TOOL-PROPOSALS.md.
+# proposals_dir:     staging area. Blank => <tools_dir>/proposed, which is
+#                    safe because the loader globs *.yaml non-recursively.
 dashboard:
   enabled: true
   tools_dir: /opt/seren/tools
   tools_enabled: []
   tools_disabled: []
+  proposals_enabled: true
+  proposals_dir: ""
 
 tools:
   # -- search_the_web (WebTools.SearchTheWeb) --

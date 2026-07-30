@@ -1,0 +1,121 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  Example plug-and-play tool manifest.
+#
+#  Copy this into your `tools_dir` (see seren-workbench.yaml.sample), edit,
+#  then POST /tools/manifests/reload. No restart, no Python.
+#
+#  Full reference: docs/TOOL-MANIFESTS.md
+#
+#  This file is loaded by the test suite to prove the documentation still
+#  parses — if you break it, CI tells you before a user finds out.
+# ═══════════════════════════════════════════════════════════════════════════
+
+schema_version: 1
+
+metadata:
+  version: "1.0.0"
+  license: GPL-3.0-or-later
+  authors:
+    - name: Chad Roesler
+  # Dashboard grouping for every tool in this file. Presentational only.
+  # Omit it and the file name is used, so `hotdog-math.yaml` would give you
+  # a "Hotdog Math" box without setting anything.
+  toolbox: Examples
+
+# Defaults for every tool below; each tool may override them.
+configuration:
+  cwd: /tmp
+
+tools:
+
+  # ── kind=process ────────────────────────────────────────────────────────
+  - name: example_disk_free
+    # What a person reads on the dashboard. Without it you'd get the derived
+    # "Example Disk Free". `name` stays what the model actually calls.
+    display_name: "Free Disk Space"
+    description: >
+      Report free space on a mounted path, human-readable. Use when someone
+      asks whether there is room for another model, dataset or build.
+    invoke:
+      kind: process
+      # A LIST, spawned directly. No shell is involved, so nothing a
+      # parameter contains can be re-parsed as a command.
+      #
+      # Note the "--": it ends option parsing, so `mount_point` cannot be
+      # read as a flag even if someone gets creative. Belt to the
+      # leading-dash rule's braces.
+      argv: ["df", "-h", "--", "{mount_point}"]
+      timeout_seconds: 15
+    parameters:
+      - name: mount_point
+        type: string
+        required: true
+        description: Absolute path to check, e.g. /mnt/nvme.
+        # Must match ENTIRELY (re.fullmatch). An absolute path and nothing
+        # cleverer than one.
+        pattern: "/[A-Za-z0-9._/-]*"
+
+  # ── kind=web ────────────────────────────────────────────────────────────
+  - name: example_recent_notes
+    description: >
+      List the operator's most recent margin notes. Use when you need to
+      check what was already written down before writing it down again.
+    invoke:
+      kind: web
+      base_url: http://127.0.0.1:7421
+      method: GET
+      path: /notes
+      headers:
+        # Header VALUES substitute. Header names deliberately do not.
+        Authorization: "Bearer {token}"
+    parameters:
+      - name: token
+        type: string
+        required: true
+        description: Bearer token for the SerenMargin instance.
+      - name: window
+        type: string
+        required: false
+        default: week
+        description: How far back to look.
+        # A closed set. Published into the JSON schema, so the model reads
+        # the rule instead of guessing and being corrected.
+        enum: ["day", "week", "month"]
+
+  # ── kind=web with a body ────────────────────────────────────────────────
+  - name: example_append_note
+    description: >
+      Append a line to an existing margin note. Use to add a detail to
+      something already recorded rather than creating a near-duplicate.
+    invoke:
+      kind: web
+      base_url: http://127.0.0.1:7421
+      method: POST
+      path: /notes/{note_id}/amend
+      # Type-aware substitution: string params are JSON-escaped and land
+      # INSIDE the quotes the template provides; numbers and booleans land
+      # bare. Both forms below are correct as written.
+      body_template: '{"text": "{text}", "pinned": {pinned}}'
+    parameters:
+      - name: note_id
+        type: string
+        required: true
+        description: The note's id, as returned by list_my_notes.
+      - name: text
+        type: string
+        required: true
+        description: The line to append. Free-form prose is fine.
+      - name: pinned
+        type: boolean
+        required: false
+        default: false
+        description: Whether to pin the note after amending it.
+
+# ── Importing a service's own manifest ─────────────────────────────────────
+# A service can host its tool definitions and you point at them, so the
+# definitions stay correct when the service is upgraded. Uncomment to try:
+#
+#  - from: http://127.0.0.1:7421/mcp-manifest
+#    overrides:
+#      - name: note_to_self
+#        description: Wording that fits this particular deployment better.

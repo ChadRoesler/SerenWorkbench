@@ -18,6 +18,7 @@ Startup enable state is seeded from DashboardConfig:
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -33,6 +34,12 @@ class ToolInfo:
     source: str = ""
     enabled: bool = True
     parameters: list[dict] = field(default_factory=list)
+    # Presentation. `name` stays the identifier the model calls; these two
+    # exist so a person scanning the dashboard isn't reading snake_case.
+    # Both are DERIVED unless something declares otherwise — see
+    # resolve_toolbox/humanise below.
+    display_name: str = ""
+    toolbox: str = ""
     # For toggles: some tools have multiple actions that can be individually
     # disabled. E.g. memory_tools has remember/recall/forget as sub-actions.
     actions: list[dict] = field(default_factory=list)
@@ -72,12 +79,62 @@ class ToolRegistry:
         self._enabled: dict[str, bool] = {}
         # "name.action" -> enabled state for sub-actions
         self._action_enabled: dict[str, bool] = {}
+        # Kept so a later replace_dynamic() can seed NEW tools the same way
+        # startup did — otherwise a tool named in tools_disabled would come
+        # back enabled the first time someone hit reload.
+        self._start_disabled: set[str] = set(start_disabled or ())
 
-        start_disabled = start_disabled or set()
         for t in builtin_tools + dynamic_tools:
-            self._enabled[t.name] = t.name not in start_disabled
+            self._enabled[t.name] = t.name not in self._start_disabled
             for a in t.actions:
                 self._action_enabled[f"{t.name}.{a['name']}"] = True
+
+    def builtin_names(self) -> set[str]:
+        """Names owned by builtin tools — the set a manifest must never take."""
+        return {t.name for t in self._builtin}
+
+    def seed_disabled(self, names: set[str]) -> None:
+        """Mark names so that when they NEXT appear they start disabled.
+
+        This is how an approved proposal arrives switched off. Approving a
+        tool and running it are two different decisions — the first says "I
+        read this and it's not malicious", the second says "and I want it
+        live right now". Collapsing them means the only moment to change
+        your mind is before you've seen it in the list.
+
+        Seeding only bites on first appearance (replace_dynamic won't touch
+        a name it already has state for), so enabling the tool later isn't
+        undone by the next reload.
+        """
+        self._start_disabled |= set(names)
+
+    def dynamic_tools(self) -> list[ToolInfo]:
+        return list(self._dynamic)
+
+    def replace_dynamic(self, new_dynamic: list[ToolInfo]) -> None:
+        """Swap the dynamic tool set, PRESERVING operator toggle state.
+
+        An operator who disabled a tool and then reloaded the directory did
+        not thereby re-enable it; a reload is a statement about what exists
+        on disk, not about what is permitted to run. Tools that survive the
+        reload keep their current state, tools that vanish drop theirs, and
+        genuinely new tools are seeded from the startup denylist.
+        """
+        surviving = {t.name for t in new_dynamic}
+        gone = {t.name for t in self._dynamic} - surviving
+
+        for name in gone:
+            self._enabled.pop(name, None)
+            for key in [k for k in self._action_enabled if k.startswith(f"{name}.")]:
+                self._action_enabled.pop(key, None)
+
+        for t in new_dynamic:
+            if t.name not in self._enabled:          # new since last load
+                self._enabled[t.name] = t.name not in self._start_disabled
+            for a in t.actions:
+                self._action_enabled.setdefault(f"{t.name}.{a['name']}", True)
+
+        self._dynamic = new_dynamic
 
     def all_tools(self) -> list[ToolInfo]:
         """Return combined list, with current enabled states applied."""
@@ -132,6 +189,8 @@ class ToolRegistry:
         return {
             "tools": [{
                 "name": t.name,
+                "display_name": t.display_name or t.name,
+                "toolbox": t.toolbox or "Other",
                 "description": t.description,
                 "type": t.type,
                 "source": t.source,
@@ -164,6 +223,43 @@ def _is_tool_def_attr(attr_name: str) -> bool:
     return attr_name.endswith(_DEF_SUFFIXES) or attr_name in _DEF_BARE_NAMES
 
 
+# ── Presentation: human names and toolbox grouping ─────────────────────
+#
+# Both are DERIVED by default and DECLARABLE when derivation can't know.
+# That ordering matters: a scheme that required every tool to declare its
+# own label would drift the moment someone added a tool and forgot, and a
+# scheme that ONLY derived couldn't put wait_for_service_tool.py and
+# service_control_tools.py in the same box — which is the actual grouping
+# an operator wants. So: per-tool key beats module constant beats derived.
+
+# Words that look wrong in Title Case. Small on purpose — this is a
+# readability nicety, not a linguistics project.
+_ACRONYMS = {
+    "url": "URL", "urls": "URLs", "id": "ID", "ids": "IDs", "api": "API",
+    "mcp": "MCP", "llm": "LLM", "tts": "TTS", "ui": "UI", "os": "OS",
+    "cpu": "CPU", "gpu": "GPU", "ram": "RAM", "http": "HTTP", "json": "JSON",
+    "yaml": "YAML", "sql": "SQL", "ok": "OK",
+}
+
+
+def humanise(name: str) -> str:
+    """get_cluster_status -> 'Get Cluster Status'."""
+    parts = [p for p in re.split(r"[_\-\s]+", (name or "").strip()) if p]
+    if not parts:
+        return name or ""
+    return " ".join(_ACRONYMS.get(p.lower(), p[:1].upper() + p[1:]) for p in parts)
+
+
+def toolbox_from_module(module_name: str) -> str:
+    """cluster_tools -> 'Cluster'; wait_for_service_tool -> 'Wait For Service'.
+
+    The trailing _tool/_tools is stripped because it's noise once the label
+    is displayed as a toolbox — 'Cluster Toolbox' beats 'Cluster Tools Toolbox'.
+    """
+    stem = re.sub(r"_tools?$", "", (module_name or "").strip())
+    return humanise(stem) or "Other"
+
+
 def _builtin_tool_info() -> list[ToolInfo]:
     """Gather tool definitions from models/tools/ modules.
 
@@ -178,6 +274,8 @@ def _builtin_tool_info() -> list[ToolInfo]:
     pkg = importlib.import_module(".models.tools", package=__package__)
     for _, name, _ in pkgutil.iter_modules(pkg.__path__):
         mod = importlib.import_module(f".models.tools.{name}", package=__package__)
+        # Module-level default, used when a tool doesn't name its own box.
+        module_box = getattr(mod, "TOOLBOX", None) or toolbox_from_module(name)
         for attr_name in dir(mod):
             if not _is_tool_def_attr(attr_name):
                 continue
@@ -195,6 +293,8 @@ def _builtin_tool_info() -> list[ToolInfo]:
                 source=f"models/tools/{name}.py",
                 enabled=True,
                 parameters=params,
+                display_name=val.get("display_name") or humanise(tname),
+                toolbox=val.get("toolbox") or module_box,
             ))
     return info
 
@@ -220,6 +320,7 @@ def build_registry(
     tools_dir: str = "/opt/seren/tools",
     tools_enabled: Optional[list[str]] = None,
     tools_disabled: Optional[list[str]] = None,
+    exclude: Optional[set[str]] = None,
 ) -> ToolRegistry:
     """Factory: gather builtin + dynamic tools, return a populated registry.
 
@@ -234,6 +335,14 @@ def build_registry(
     """
     builtin = _builtin_tool_info()
     dynamic = _dynamic_tool_info(tools_dir, mcp_config)
+
+    # A feature switched off should be ABSENT, not present-and-erroring. A
+    # tool that lists in the schema and then reports "not enabled" on every
+    # call spends the model's attention to teach it a lesson the operator
+    # already knew.
+    if exclude:
+        builtin = [t for t in builtin if t.name not in exclude]
+        dynamic = [t for t in dynamic if t.name not in exclude]
 
     all_names = {t.name for t in builtin} | {t.name for t in dynamic}
     start_disabled: set[str] = set(tools_disabled or [])
@@ -252,17 +361,25 @@ def _dynamic_tool_info(tools_dir: str,
     with parameters extracted from the entry's parameter list, CARRYING the
     entry + owning manifest so the MCP layer can build its dispatcher.
     """
-    info: list[ToolInfo] = []
-
     # Short-circuit if the directory doesn't exist
     if not os.path.isdir(tools_dir):
-        return info
+        return []
 
     from .dynamic_tools.manifest_loader import ManifestLoader
 
     loader = ManifestLoader()
-    result = loader.load_directory(tools_dir)
+    return tool_info_from_load_result(loader.load_directory(tools_dir))
 
+
+def tool_info_from_load_result(result) -> list[ToolInfo]:
+    """Turn a ManifestLoader LoadResult into ToolInfo entries.
+
+    Split out of _dynamic_tool_info so the reload path builds its tool list
+    through the EXACT code startup used. Two functions constructing ToolInfo
+    from the same LoadResult is precisely the duplicate-source-of-truth shape
+    that keeps costing this project days.
+    """
+    info: list[ToolInfo] = []
     for entry, _manifest, _source in result.resolved_inline_tools:
         name = entry.name or "unnamed"
         desc = entry.description or "(no description)"
@@ -276,9 +393,29 @@ def _dynamic_tool_info(tools_dir: str,
             parameters=params,
             entry=entry,
             owner=_manifest,
+            display_name=getattr(entry, "display_name", None) or humanise(name),
+            toolbox=_dynamic_toolbox(entry, _manifest, _source),
         ))
 
     return info
+
+
+def _dynamic_toolbox(entry, manifest, source) -> str:
+    """Which custom toolbox a manifest tool belongs to.
+
+    Order: the tool says so > the manifest's metadata says so > the file
+    name. The filename fallback means a operator who just drops
+    `hotdog-math.yaml` in gets a "Hotdog Math" box for free without
+    learning a new key.
+    """
+    declared = getattr(entry, "toolbox", None)
+    if declared:
+        return str(declared)
+    meta = getattr(manifest, "metadata", None)
+    if meta is not None and getattr(meta, "toolbox", None):
+        return str(meta.toolbox)
+    stem = os.path.splitext(os.path.basename(str(source or "")))[0]
+    return humanise(stem) or "Custom"
 
 
 def _extract_dynamic_params(params: list) -> list[dict]:
@@ -290,11 +427,18 @@ def _extract_dynamic_params(params: list) -> list[dict]:
         preq = p.required if hasattr(p, "required") else False
         pdesc = p.description if hasattr(p, "description") else ""
         pdefault = p.default if hasattr(p, "default") else None
-        out.append({
+        entry = {
             "name": pname,
             "type": ptype,
             "required": preq,
             "description": pdesc,
             "default": pdefault,
-        })
+        }
+        # Surface the string constraints to the dashboard too — an operator
+        # reading /tools should see the same rules the model is held to.
+        if getattr(p, "pattern", None):
+            entry["pattern"] = p.pattern
+        if getattr(p, "enum", None):
+            entry["enum"] = list(p.enum)
+        out.append(entry)
     return out

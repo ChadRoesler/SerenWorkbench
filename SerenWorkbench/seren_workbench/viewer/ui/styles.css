@@ -75,6 +75,42 @@
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(142,154,175,0.12);
 }
+/* Select in a panel header — matches .filter exactly.
+   The native control was shipped UNSTYLED, so the browser drew its own
+   chevron hard against the border inside a themed panel. appearance:none
+   drops that arrow and we paint our own, inset the same 10px as the text
+   padding, with padding-right reserving room so a long option ("superseded")
+   never runs underneath it. The chevron is an inline SVG: a data URI can't
+   read a CSS variable, so its stroke is --slate spelled out (%23 is '#'). */
+.ctrls select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-color: var(--bg-soft);
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="%2394a3b8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="2.5,4.5 6,8 9.5,4.5"/></svg>');
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  border: 1px solid var(--border-soft);
+  color: var(--text);
+  padding: 4px 30px 4px 10px;
+  border-radius: 7px;
+  font-size: 0.82em;
+  font-family: var(--mono);
+  min-width: 132px;              /* fits "superseded" without squeezing */
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, background-color 0.15s;
+}
+.ctrls select:hover { border-color: var(--accent); }
+.ctrls select:focus {
+  outline: none;
+  background-color: var(--surface);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(142,154,175,0.12);
+}
+/* The popup list is drawn by the OS, which otherwise uses system colours —
+   light-on-light and unreadable against this theme on Windows. */
+.ctrls select option { background: var(--surface); color: var(--text); }
+
 .ctrls button {
   background: transparent;
   border: 1px solid var(--border-soft);
@@ -282,6 +318,66 @@ table.params td.ptype { font-family: var(--mono); color: var(--accent); }
 table.params td.preq  { color: var(--warn); }
 table.params td.pdef  { font-family: var(--mono); color: var(--text-mute); }
 table.params td.pdesc { color: var(--text-soft); }
+/* ── Toolboxes (nested accordions) ───────────────────────────────── */
+.tbox { border: 1px solid var(--border, #2a2f3a); border-radius: 6px; margin: .4rem 0; }
+.tbox-head {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .55rem .7rem; cursor: pointer; user-select: none;
+}
+.tbox-head:hover { background: rgba(127,127,127,.07); }
+.tbox-name { font-weight: 600; }
+.tbox-count { margin-left: auto; opacity: .6; font-size: .85em; }
+.tbox > .tbox-body { display: none; padding: .1rem .6rem .6rem .6rem; }
+.tbox.expanded > .tbox-body { display: block; }
+/* The caret is the only thing that rotates; nesting means several are on
+   screen at once, so scope it to THIS group and not descendants. */
+.tbox > .tbox-head > .caret { transition: transform .12s ease; }
+.tbox.expanded > .tbox-head > .caret { transform: rotate(90deg); }
+/* One indent step per level, drawn with a rule so the nesting reads. */
+.tbox .tbox { margin-left: .6rem; border-left: 2px solid var(--accent, #e06c5a); }
+
+/* Identity line inside an expanded tool: the callable name + where it lives. */
+.ident {
+  display: flex; align-items: baseline; gap: .75rem; flex-wrap: wrap;
+  padding-bottom: .4rem; margin-bottom: .5rem;
+  border-bottom: 1px solid var(--border, #2a2f3a);
+}
+.ident .raw-name { font-weight: 600; }
+.ident .src { margin-left: auto; opacity: .6; font-size: .85em; }
+
+/* ── Proposals queue ─────────────────────────────────────────────── */
+/* The hidden attribute has to win. `[hidden] { display: none }` comes from
+   the UA stylesheet at the same specificity as this class rule, and a later
+   rule of equal specificity wins — so `.pip { display: inline-block }` was
+   quietly overriding pip.hidden and the tab showed a "0" badge forever.
+   This must stay ABOVE the base rule to read right, and carry the attribute
+   selector so it outranks it. */
+.pip[hidden] { display: none !important; }
+.pip {
+  display: inline-block; margin-left: .45em; padding: 0 .4em;
+  min-width: 1.1em; border-radius: 999px; font-size: .75em; line-height: 1.5;
+  background: var(--accent, #e06c5a); color: #fff; text-align: center;
+  font-weight: 600;
+}
+.prop-card .prop-actions { margin-top: .75rem; display: flex; gap: .5rem; }
+.prop-card button { cursor: pointer; padding: .35rem .7rem; border-radius: 4px; }
+.btn-approve { border: 1px solid #2e7d5b; }
+.btn-reject  { border: 1px solid #a4453a; }
+.prop-detail { margin-top: .6rem; }
+.effect { margin: .5rem 0; padding: .5rem .6rem; border-left: 2px solid var(--accent, #e06c5a); }
+.eff-head { margin-bottom: .35rem; }
+/* The argv is the thing being approved. Give it room and let it wrap
+   rather than truncating - a scrolled-off tail is where you hide a flag. */
+.eff-runs code {
+  display: block; margin-top: .2rem; padding: .4rem .5rem;
+  white-space: pre-wrap; word-break: break-all; border-radius: 3px;
+}
+.eff-params { margin: .4rem 0 0 1rem; padding: 0; }
+.eff-params li { margin: .15rem 0; }
+.manifest { margin-top: .6rem; }
+.manifest summary { cursor: pointer; }
+.manifest pre { white-space: pre-wrap; padding: .5rem; border-radius: 3px; }
+
 .no-params { color: var(--text-mute); font-style: italic; font-size: 0.85em; }
 
 .num { text-align: right; font-variant-numeric: tabular-nums; }

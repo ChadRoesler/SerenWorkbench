@@ -1,11 +1,18 @@
 """
 Tool routes — GET /tools (list tools), GET /tools/state (snapshot),
-POST /tools/state (enable/disable toggle).
+POST /tools/state (enable/disable toggle), GET+POST /tools/manifests
+(inspect and live-reload the YAML manifest directory).
 
 The LLM calls GET /tools for tool discovery. The viewer calls the state
 endpoints for enable/disable toggles.
+
+ROUTE ORDER: the literal paths here must stay ahead of any future
+/tools/{name}, or FastAPI will match "state" and "manifests" as a name.
+Same specific-before-generic rule that bit SerenMargin's /notes/stats.
 """
 from __future__ import annotations
+
+from dataclasses import asdict
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -24,6 +31,8 @@ async def list_tools(request: Request):
         "tools": [
             {
                 "name": t.name,
+                "display_name": t.display_name or t.name,
+                "toolbox": t.toolbox or "Other",
                 "description": t.description,
                 "type": t.type,
                 "source": t.source,
@@ -33,6 +42,41 @@ async def list_tools(request: Request):
             for t in tools
         ],
     }
+
+
+@router.get("/tools/manifests")
+async def get_manifests(request: Request):
+    """What the YAML manifest directory looked like at the last load —
+    live tools, skipped tools and the reason, files that failed to parse."""
+    reg = getattr(request.app.state, "dynamic_registry", None)
+    if reg is None:
+        raise HTTPException(
+            status_code=503,
+            detail="dynamic tool registry unavailable (MCP surface not mounted)",
+        )
+    return asdict(reg.current_snapshot())
+
+
+@router.post("/tools/manifests/reload")
+async def reload_manifests(request: Request):
+    """Re-read the manifest directory and apply the difference LIVE.
+
+    Adds, replaces and removes dynamic tools on the running MCP surface.
+    Builtin tools are never touched, operator enable/disable state survives,
+    and the response says exactly what changed.
+
+    A note on what this deliberately is NOT: it reads what is already on
+    disk. It cannot author a tool. Registration stays a thing that happens
+    because a human put a file somewhere — hands on the surface.
+    """
+    reg = getattr(request.app.state, "dynamic_registry", None)
+    if reg is None:
+        raise HTTPException(
+            status_code=503,
+            detail="dynamic tool registry unavailable (MCP surface not mounted)",
+        )
+    snapshot = await reg.reload()
+    return {"ok": True, **asdict(snapshot)}
 
 
 @router.get("/tools/state")

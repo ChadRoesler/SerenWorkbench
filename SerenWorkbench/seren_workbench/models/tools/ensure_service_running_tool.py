@@ -15,6 +15,11 @@ from typing import Optional
 import httpx
 from ...tool_config.mcp_config import McpConfig
 
+# Which toolbox these land in on the dashboard. Derivation would put
+# this module in a box of its own; this says otherwise. Per-tool
+# "toolbox" keys in a TOOL_DEF override even this.
+TOOLBOX = "Services"
+
 
 ALLOWED_SERVICES = {"llama", "kokoro", "comfy", "whisper", "chroma", "searxng"}
 

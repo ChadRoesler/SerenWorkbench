@@ -22,6 +22,35 @@
   </div>
 </section>
 
+<!-- Proposals -->
+<section class="view" id="proposals">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="info" id="proposals-info">—</div>
+      <div class="ctrls">
+        <select id="proposals-status">
+          <option value="pending">pending</option>
+          <option value="">all</option>
+          <option value="approved">approved</option>
+          <option value="rejected">rejected</option>
+          <option value="superseded">superseded</option>
+        </select>
+        <button data-refresh="proposals">↻</button>
+      </div>
+    </div>
+    <div class="note">
+      <span class="label">two gates:</span>
+      approving <em>installs</em> a tool — registered, visible, and switched
+      <strong>off</strong>. You enable it separately on the
+      <a href="#" data-tab="state" class="tab-link">Tool State</a> tab. Read the
+      <span class="mono">runs</span> line, not the description: that's what
+      actually executes. Rejecting requires a critique, and the proposer reads
+      it and can revise.
+    </div>
+    <div id="proposals-body" class="loading">loading…</div>
+  </div>
+</section>
+
 <!-- Config -->
 <section class="view" id="config">
   <div class="panel">

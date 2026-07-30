@@ -16,6 +16,11 @@ from typing import Optional
 import httpx
 from ...tool_config.mcp_config import McpConfig
 
+# Which toolbox these land in on the dashboard. Derivation would put
+# this module in a box of its own; this says otherwise. Per-tool
+# "toolbox" keys in a TOOL_DEF override even this.
+TOOLBOX = "Services"
+
 
 WAIT_FOR_SERVICE_TOOL_DEF = {
     "name": "wait_for_service",

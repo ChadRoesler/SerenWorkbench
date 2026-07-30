@@ -37,11 +37,29 @@ class DashboardConfig:
       - tools_disabled: these tools start DISABLED.
       - tools_enabled:  if non-empty, it is an ALLOWLIST — every tool NOT
         named here starts disabled. Empty list = everything enabled.
+
+    proposals_dir is the STAGING area for tools the model has proposed. It
+    defaults to a subdirectory of tools_dir because that is where an
+    operator will look for it — and it is safe there because the loader
+    globs "*.yaml" NON-recursively, so a subdirectory is invisible to it.
+    That safety is load-bearing rather than incidental, so there is a test
+    asserting a manifest in here never reaches the live surface.
+
+    proposals_enabled gates the propose_tool tool itself. Default TRUE is
+    defensible only because a proposal cannot run: it is a text file in a
+    directory nothing loads until a human moves it. Set false to remove the
+    tool entirely — "don't install" as a config line.
     """
     enabled: bool = True
     tools_dir: str = "/opt/seren/tools"
     tools_enabled: list[str] = field(default_factory=lambda: [])
     tools_disabled: list[str] = field(default_factory=lambda: [])
+    proposals_dir: str = ""          # "" => <tools_dir>/proposed
+    proposals_enabled: bool = True
+
+    def resolve_proposals_dir(self) -> str:
+        import os
+        return self.proposals_dir or os.path.join(self.tools_dir, "proposed")
 
     @classmethod
     def from_dict(cls, d: Optional[dict[str, Any]]) -> "DashboardConfig":
@@ -51,6 +69,8 @@ class DashboardConfig:
             tools_dir=str(d.get("tools_dir", "/opt/seren/tools")),
             tools_enabled=list(d.get("tools_enabled", [])),
             tools_disabled=list(d.get("tools_disabled", [])),
+            proposals_dir=str(d.get("proposals_dir", "") or ""),
+            proposals_enabled=bool(d.get("proposals_enabled", True)),
         )
 
 
