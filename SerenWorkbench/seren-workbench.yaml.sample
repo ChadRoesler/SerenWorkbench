@@ -57,6 +57,22 @@ dashboard:
   proposals_enabled: true
   proposals_dir: ""
 
+# ── Update checking ───────────────────────────────────────────────────
+#
+# Asks the package index whether a newer seren-workbench exists and reports it
+# on GET /. Purely informational - the Workbench never upgrades itself.
+# Applying an update is `pip install -U seren-workbench` plus a service
+# restart, which is your supervisor's job (NSSM, systemd), not this process's.
+#
+# Needs the extra:  pip install 'seren-workbench[updates]'
+# Without it, GET / reports status="unavailable" and says why - it does NOT
+# quietly report that you're up to date.
+updates:
+  enabled: true
+  check_interval_hours: 6      # cached; never checked per-request
+  allow_prerelease: false      # true would offer you 2.0.0rc1
+  # index_url: "https://pypi.org/pypi/{distribution}/json"   # private index?
+
 tools:
   # -- search_the_web (WebTools.SearchTheWeb) --
   search_the_web:
