@@ -84,7 +84,15 @@ class ManifestLoader:
 
     def _load_one(self, file_path: str, result: LoadResult) -> None:
         try:
-            with open(file_path, "r") as f:
+            # encoding= IS NOT OPTIONAL. Without it Python uses the LOCALE
+            # codec, which is cp1252 on Windows. Every manifest in this repo
+            # (and the example the docs tell operators to copy) opens with a
+            # `# ═══` banner - U+2550 is E2 95 90 in UTF-8, so cp1252 chokes
+            # on byte 0x90 at position 4 and the file lands in failed_files.
+            # Invisible on the Jetsons and in CI (UTF-8 locale), fatal for a
+            # Windows operator. PyYAML strips a leading BOM itself, so plain
+            # utf-8 is enough - utf-8-sig buys nothing here.
+            with open(file_path, "r", encoding="utf-8") as f:
                 raw = yaml.safe_load(f)
             if raw is None:
                 result.failed_files.append((file_path, "file deserialized to None (empty?)"))
