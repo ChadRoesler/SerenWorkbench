@@ -136,7 +136,7 @@ a person put it somewhere.
 
 | | |
 |---|---|
-| `GET /` | service info and tool counts |
+| `GET /` | service info, tool counts and update status |
 | `GET /health` | liveness |
 | `GET /tools` | every tool with its schema |
 | `GET`/`POST` `/tools/state` | enable and disable, per tool or per action |
@@ -150,6 +150,49 @@ a person put it somewhere.
 | `GET /logs` | recent server logs |
 | `/mcp/` | the MCP streamable-HTTP transport |
 | `/viewer` | the operator dashboard |
+
+## Update checking
+
+`GET /` reports whether a newer `seren-workbench` has been published, alongside
+the tool counts:
+
+```jsonc
+{
+  "service": "SerenWorkbench",
+  "version": "1.2.0",
+  "tools_count": 26,
+  "updates": {
+    "status": "ok",
+    "installed": "1.2.0",
+    "latest": "1.3.0",
+    "update_available": true
+  }
+}
+```
+
+Opt-in, because a box that never leaves the LAN has no business calling PyPI:
+
+```bash
+pip install 'seren-workbench[updates]'
+```
+
+```yaml
+updates:
+  enabled: true
+  check_interval_hours: 6      # cached; never checked per-request
+  allow_prerelease: false
+```
+
+The result is cached and the check never happens in the request path, so `/`
+stays fast. `updates.status` is always one of `ok`, `disabled`, `unavailable`
+(the extra isn't installed) or `error` — **never absent, and never a silent
+"you're fine" when it couldn't actually check.**
+`SEREN_WORKBENCH_UPDATES_ENABLED=false` turns it off without editing config.
+
+**The Workbench never upgrades itself.** Applying an update is `pip install -U
+seren-workbench` and a restart — your service supervisor's job, not this
+process's. A running process can't reliably swap its own code out from under
+itself, so it doesn't pretend to.
 
 ## Development
 

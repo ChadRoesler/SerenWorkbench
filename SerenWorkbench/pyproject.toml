@@ -50,11 +50,35 @@ dependencies = [
     "uvicorn[standard]>=0.29",
     "httpx>=0.28",
     "pyyaml>=6.0",
-    "seren-meninges>=1.0.0,<2",
+    # Meninges 2.0.0 is the floor: it carries the bearer-auth byte-compare fix
+    # (a non-ASCII Authorization header used to 500 instead of 401) and
+    # seren_meninges.updates, which the [updates] extra below imports. <3
+    # because a MAJOR here is an un-defaultable security change, and that is
+    # the only thing that should ever force a bump.
+    "seren-meninges>=2.0.0,<3",
     "seren-sinew>=1.0.0,<2",
 ]
 
 [project.optional-dependencies]
+# "is there a newer seren-workbench" reporting on GET /. Opt-in, because a box
+# that never leaves the LAN has no business calling PyPI. Pulls the Meninges
+# extra rather than httpx/packaging directly - the check lives in
+# seren_meninges.updates and only one repo should own that dep set.
+updates = ["seren-meninges[updates]>=2.0.0,<3"]
+
+# Corporate / intercepting-proxy support. Routes Python TLS through the OS
+# trust store so a corp root CA (Zscaler/Netskope/etc.) is honored without
+# hand-exporting .pem files. Opt-in: `pip install 'seren-workbench[corp]'` +
+# tls.trust_system_store: true (the installer's --corp flag sets both).
+#
+# THIS EXTRA WAS MISSING while config.py already honored
+# SEREN_WORKBENCH_TRUST_SYSTEM_STORE and the installer already offered --corp -
+# so an operator could turn the knob on, watch pip warn "does not provide the
+# extra 'corp'" in passing, and get a TLS failure much later with nothing
+# pointing back here. The knob and the package that implements it must ship
+# together.
+corp = ["truststore>=0.9"]
+
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
@@ -63,11 +87,25 @@ dev = [
 [project.scripts]
 seren-workbench = "seren_workbench.__main__:main"
 
+[project.urls]
+Homepage = "https://github.com/ChadRoesler/SerenWorkbench"
+Repository = "https://github.com/ChadRoesler/SerenWorkbench"
+"Bug Tracker" = "https://github.com/ChadRoesler/SerenWorkbench/issues"
+
 [tool.setuptools_scm]
-# Version comes from the git tag; written at build time, read by __init__.
-version_file = "seren_workbench/_version.py"
-# The repo root is one level up from this pyproject (nested family layout).
+# .git is one level above pyproject.toml (repo root, not the SerenWorkbench subdir)
 root = ".."
+version_scheme = "release-branch-semver"
+# Write the tag-derived version into the package (shipped in the wheel, read
+# by __init__ / importlib.metadata). Replaces the old sed-on-__init__ hack -
+# version now flows from the git tag with no manual step. _version.py is
+# gitignored; it's a build artifact, never committed.
+version_file = "seren_workbench/_version.py"
+# Strip the leading 'v' so "v1.2.3" → "1.2.3"
+tag_regex = "^v(?P<version>[0-9]+\\.[0-9]+\\.[0-9]+.*)$"
+# Used when no git tags exist (local dev, fresh clone). CI release builds
+# override with SETUPTOOLS_SCM_PRETEND_VERSION.
+fallback_version = "0.0.0.dev0"
 
 [tool.setuptools.packages.find]
 include = ["seren_workbench*"]

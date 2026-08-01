@@ -7,7 +7,7 @@ builtin tools, dynamic tool registry, optional bearer auth, the operator
 dashboard, and the MCP transport for LLMs to connect to.
 
 Serves:
-    GET  /              — service info + tool counts
+    GET  /              — service info + tool counts + update status
     GET  /health        — liveness
     GET  /tools         — JSON list of all registered tools (for the LLM)
     GET  /viewer        — the operator dashboard HTML
@@ -30,6 +30,7 @@ the half-cutover state this port started in.
 from __future__ import annotations
 
 import time
+import logging
 from contextlib import asynccontextmanager, AsyncExitStack
 from pathlib import Path
 from typing import Optional
@@ -52,7 +53,7 @@ from seren_sinew.request_log import RequestLoggingMiddleware
 
 from . import __version__ as _fallback_version
 APP_VERSION = get_version("seren-workbench", fallback=_fallback_version)
-
+log = logging.getLogger("seren_workbench")
 
 def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
     cfg = config or load_config()
@@ -104,6 +105,36 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
         from .dynamic_tools.tool_audit_log import ToolAuditLog
         app.state.audit_log = ToolAuditLog()
 
+        # ── Update checker ───────────────────────────────────────
+        # "is there a newer seren-workbench". Cosmetic: it polls on a TTL,
+        # never in the request path, and every failure mode is a status string
+        # rather than an exception.
+        #
+        # The try/except guards the IMPORT, because a Meninges older than 2.0.0
+        # has no updates module. The gate is DELIBERATELY VISIBLE - state stays
+        # None and GET / reports status="unavailable" with a reason. A silent
+        # fallback would render as "you're up to date", which is the exact
+        # failure shape that let mcp 2.0.0 quietly delete this service's /mcp
+        # endpoint without anything going red.
+        try:
+            from seren_meninges.updates import UpdateChecker
+            app.state.updates = UpdateChecker(
+                "seren-workbench",
+                enabled=cfg.updates.enabled,
+                index_url=cfg.updates.index_url,
+                ttl_seconds=cfg.updates.check_interval_hours * 3600.0,
+                allow_prerelease=cfg.updates.allow_prerelease,
+                fallback_version=APP_VERSION,
+            )
+        # Catch EVERYTHING, not just ImportError. This whole feature is cosmetic -
+        # seren_meninges/version.py states the contract: a version read must never
+        # crash startup. A too-narrow catch here already bit us: cfg.updates was
+        # missing, the AttributeError sailed past `except ImportError`, and five
+        # services failed to boot on a feature that only draws a badge.
+        except Exception as exc:
+            app.state.updates = None
+            log.info("update checking unavailable (%s)", exc)
+
         async with AsyncExitStack() as _stack:
             # ── DI clients: one AsyncClient per Seren service ───────────
             svc = cfg.services
@@ -136,10 +167,10 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
                 mcp_server = mount_mcp_routes(app)
             except ImportError as exc:
                 mcp_server = None
-                print(f"[seren-workbench] MCP surface not available; HTTP-only mode ({exc})")
+                log(f"[seren-workbench] MCP surface not available; HTTP-only mode ({exc})")
             except Exception as exc:
                 mcp_server = None
-                print(f"[seren-workbench] MCP mount failed: {exc!r} — continuing without MCP")
+                log.info(f"[seren-workbench] MCP mount failed: {exc!r} — continuing without MCP")
 
             # ── Live tool reload ────────────────────────────────────────
             # The initial LoadResult is rebuilt from the ToolInfos the
@@ -173,17 +204,17 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
                 )
             except Exception as exc:
                 app.state.dynamic_registry = None
-                print(f"[seren-workbench] live tool reload unavailable: {exc!r}")
+                log(f"[seren-workbench] live tool reload unavailable: {exc!r}")
 
             # The streamable-HTTP transport needs its session manager's task
             # group entered explicitly.
             session_manager = getattr(mcp_server, "session_manager", None)
             if session_manager is not None:
                 await _stack.enter_async_context(session_manager.run())
-                print("[seren-workbench] MCP session manager running")
+                log("[seren-workbench] MCP session manager running")
             yield
 
-        print("[seren-workbench] shut down")
+        log.info("[seren-workbench] shut down")
 
     app = FastAPI(
         title="SerenWorkbench",

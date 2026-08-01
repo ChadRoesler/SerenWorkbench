@@ -2,6 +2,12 @@
 Info routes — GET /, GET /health.
 
 Service info + liveness endpoint.
+
+`/` also carries the update status. It's a PUBLIC route (no bearer), which is
+fine because it already published the running version — `updates` adds the
+comparison, not the disclosure. If you'd rather not advertise "and it's out of
+date" to an unauthenticated caller, set `updates.enabled: false` and read the
+badge from the dashboard instead.
 """
 from __future__ import annotations
 
@@ -15,6 +21,22 @@ from seren_meninges import get_version
 APP_VERSION = get_version("seren-workbench", fallback=_fallback_version)
 
 router = APIRouter(tags=["info"])
+
+# What `/` reports when no checker was wired at all — a seren-meninges older
+# than 2.0.0, so the import in the lifespan didn't take.
+#
+# This is a full payload rather than a null or an absent key ON PURPOSE: an
+# absent key reads as "fine" to whatever renders it, and "I could not check"
+# is not the same fact as "you are current".
+_NOT_WIRED = {
+    "status": "unavailable",
+    "distribution": "seren-workbench",
+    "latest": None,
+    "update_available": False,
+    "detail": "update checking not installed — "
+              "pip install 'seren-workbench[updates]'",
+    "checked_at": None,
+}
 
 
 @router.get("/")
@@ -33,6 +55,12 @@ async def root(request: Request):
         except Exception:  # noqa: BLE001 — a summary must never 500
             pending = 0
 
+    checker = getattr(request.app.state, "updates", None)
+    if checker is None:
+        updates = {**_NOT_WIRED, "installed": APP_VERSION}
+    else:
+        updates = (await checker.get()).as_dict()
+
     return {
         "service": "SerenWorkbench",
         "version": APP_VERSION,
@@ -41,6 +69,7 @@ async def root(request: Request):
         "dynamic_count": sum(1 for t in all_tools if t.type == "dynamic"),
         "disabled_count": sum(1 for t in all_tools if not t.enabled),
         "pending_proposals": pending,
+        "updates": updates,
     }
 
 
