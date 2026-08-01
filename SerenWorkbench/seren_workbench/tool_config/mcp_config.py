@@ -64,7 +64,18 @@ class McpConfig:
             return McpConfig({}, f"(none - built-in defaults; looked at {path})")
 
         try:
-            with open(path, "r") as f:
+            # encoding= IS NOT OPTIONAL - see manifest_loader._load_one for the
+            # full story. Short version: no encoding= means the LOCALE codec,
+            # which is cp1252 on Windows, and the `# ═══` banner at the top of
+            # seren-workbench.yaml.sample decodes to a UnicodeDecodeError.
+            #
+            # WORSE HERE THAN IN THE LOADER: the lenient except below catches
+            # it and falls back to built-in defaults with one stderr line, so a
+            # Windows operator's entire config file is silently ignored while
+            # they stare at the knobs they just set. Postel's leniency is the
+            # kindness move for a MALFORMED file; it must not be what hides a
+            # file we simply failed to read.
+            with open(path, "r", encoding="utf-8") as f:
                 raw = yaml.safe_load(f)
 
             if not isinstance(raw, dict):
