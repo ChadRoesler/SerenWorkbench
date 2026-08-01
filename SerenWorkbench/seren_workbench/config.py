@@ -23,8 +23,15 @@ from seren_meninges import ServerConfig, TlsConfig
 
 log = logging.getLogger(__name__)
 
-# Port 7425 — family convention: memory 7420, loci-v 7421, loci-nv 7422,
-# scc-nv 7423, scc-v 7424, workbench 7425, probe 7430
+# Port 7425 — the family map, canonical and verified by running --describe
+# on all eight installers:
+#   lodestar 6361 · memory 7420 · margin 7421 · loci 7422 ·
+#   corpus-callosum 7423 · workbench 7425 · probe 7430 · observatory 7777
+#
+# The installer used to say 7444 while this said 7425, so an installed node
+# answered somewhere the docs didn't. Both are 7425 now. If you move this,
+# move services/{bash,powershell}/seren-workbench-setup.sh with it — those
+# are checked against each other by --describe, not by hope.
 DEFAULT_PORT = 7425
 
 
@@ -87,7 +94,7 @@ class ServicesConfig:
     for a split deploy.
     """
     memory_url: str = "http://127.0.0.1:7420"        # SerenMemory
-    runtime_host_url: str = "http://127.0.0.1:6361"  # SerenRuntimeHost (cluster head)
+    runtime_host_url: str = "http://127.0.0.1:6361"  # SerenLodestar (cluster head)
     searxng_url: str = "http://127.0.0.1:8080"       # SearXNG metasearch
     scheduler_url: str = "http://127.0.0.1:6361"     # scheduler surface (RuntimeHost today)
     timeout_seconds: float = 15.0                    # per-request client timeout

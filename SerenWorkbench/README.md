@@ -2,10 +2,10 @@
 
 The tool surface an LLM reaches through.
 
-One process on port **7425** that serves an MCP endpoint, an operator
-dashboard and a small HTTP API. Builtin tools cover memory, web search,
-time, cluster control and the scheduler. On top of those, you can add your
-own tools as **YAML files** — no Python, no restart.
+One process on port **7425** serving an MCP endpoint, an operator dashboard and a small HTTP
+API. Builtin tools cover memory, web search, time, cluster control and the
+scheduler. On top of those, you can add your own tools as **YAML files** —
+no Python, no restart.
 
 Part of the [Seren](https://github.com/ChadRoesler) stack, but it doesn't
 require the rest of it. Point it at whichever services you actually run.
