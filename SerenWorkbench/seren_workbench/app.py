@@ -167,7 +167,7 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
                 mcp_server = mount_mcp_routes(app)
             except ImportError as exc:
                 mcp_server = None
-                log(f"[seren-workbench] MCP surface not available; HTTP-only mode ({exc})")
+                log.info(f"[seren-workbench] MCP surface not available; HTTP-only mode ({exc})")
             except Exception as exc:
                 mcp_server = None
                 log.info(f"[seren-workbench] MCP mount failed: {exc!r} — continuing without MCP")
@@ -204,14 +204,14 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
                 )
             except Exception as exc:
                 app.state.dynamic_registry = None
-                log(f"[seren-workbench] live tool reload unavailable: {exc!r}")
+                log.info(f"[seren-workbench] live tool reload unavailable: {exc!r}")
 
             # The streamable-HTTP transport needs its session manager's task
             # group entered explicitly.
             session_manager = getattr(mcp_server, "session_manager", None)
             if session_manager is not None:
                 await _stack.enter_async_context(session_manager.run())
-                log("[seren-workbench] MCP session manager running")
+                log.info("[seren-workbench] MCP session manager running")
             yield
 
         log.info("[seren-workbench] shut down")
