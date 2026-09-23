@@ -20,6 +20,7 @@ from typing import Any, Optional
 import yaml
 
 from seren_meninges import ServerConfig, TlsConfig
+from seren_meninges.credentials import resolve_token
 
 log = logging.getLogger(__name__)
 
@@ -35,19 +36,42 @@ log = logging.getLogger(__name__)
 DEFAULT_PORT = 7425
 
 
+# Where the plug-and-play manifests live when the operator says nothing.
+# This matches what the Starwright installer writes. It used to be
+# /opt/seren/tools, which needs root to create and which the installer never
+# wrote, so an installed Workbench and its own default disagreed.
+DEFAULT_TOOLS_DIR = "~/seren-workbench/tools"
+STATE_FILE_NAME = ".tool-state.json"
+
+
+def _expand(path: str) -> str:
+    """`~` means the home directory, on every OS, in every place a path is
+    read. The installer writes `~/seren-workbench/tools`; a config that stored
+    that raw loaded zero tools, refused every reload ("directory does not
+    exist") and staged proposals under a literal directory named `~`."""
+    return os.path.expanduser(str(path or ""))
+
+
 @dataclass
 class DashboardConfig:
     """Operator dashboard knobs.
 
     tools_enabled / tools_disabled seed the registry's enable state at
-    startup (so an operator's disables survive a restart):
+    startup:
       - tools_disabled: these tools start DISABLED.
-      - tools_enabled:  if non-empty, it is an ALLOWLIST — every tool NOT
+      - tools_enabled:  if non-empty, it is an ALLOWLIST - every tool NOT
         named here starts disabled. Empty list = everything enabled.
+
+    state_file is where the dashboard's own toggles are REMEMBERED, so a
+    tool you switched off (or a proposal you approved but left off) is still
+    off after the box reboots. Blank means <tools_dir>/.tool-state.json.
+    Precedence when they disagree: a tool named in the yaml lists above is
+    the operator's written word and wins; everything else is whatever the
+    dashboard last said.
 
     proposals_dir is the STAGING area for tools the model has proposed. It
     defaults to a subdirectory of tools_dir because that is where an
-    operator will look for it — and it is safe there because the loader
+    operator will look for it - and it is safe there because the loader
     globs "*.yaml" NON-recursively, so a subdirectory is invisible to it.
     That safety is load-bearing rather than incidental, so there is a test
     asserting a manifest in here never reaches the live surface.
@@ -55,35 +79,51 @@ class DashboardConfig:
     proposals_enabled gates the propose_tool tool itself. Default TRUE is
     defensible only because a proposal cannot run: it is a text file in a
     directory nothing loads until a human moves it. Set false to remove the
-    tool entirely — "don't install" as a config line.
+    tool entirely - "don't install" as a config line.
     """
     enabled: bool = True
-    tools_dir: str = "/opt/seren/tools"
+    tools_dir: str = DEFAULT_TOOLS_DIR
     tools_enabled: list[str] = field(default_factory=lambda: [])
     tools_disabled: list[str] = field(default_factory=lambda: [])
     proposals_dir: str = ""          # "" => <tools_dir>/proposed
     proposals_enabled: bool = True
+    state_file: str = ""             # "" => <tools_dir>/.tool-state.json
+
+    def __post_init__(self) -> None:
+        self.tools_dir = _expand(self.tools_dir)
+        self.proposals_dir = _expand(self.proposals_dir)
+        self.state_file = _expand(self.state_file)
 
     def resolve_proposals_dir(self) -> str:
-        import os
         return self.proposals_dir or os.path.join(self.tools_dir, "proposed")
+
+    def resolve_state_file(self) -> str:
+        return self.state_file or os.path.join(self.tools_dir, STATE_FILE_NAME)
 
     @classmethod
     def from_dict(cls, d: Optional[dict[str, Any]]) -> "DashboardConfig":
         d = d or {}
         return cls(
             enabled=bool(d.get("enabled", True)),
-            tools_dir=str(d.get("tools_dir", "/opt/seren/tools")),
-            tools_enabled=list(d.get("tools_enabled", [])),
-            tools_disabled=list(d.get("tools_disabled", [])),
+            tools_dir=str(d.get("tools_dir") or DEFAULT_TOOLS_DIR),
+            tools_enabled=list(d.get("tools_enabled") or []),
+            tools_disabled=list(d.get("tools_disabled") or []),
             proposals_dir=str(d.get("proposals_dir", "") or ""),
             proposals_enabled=bool(d.get("proposals_enabled", True)),
+            state_file=str(d.get("state_file", "") or ""),
         )
+
+
+# The Seren services the builtin tools talk to, by the DI parameter name the
+# tool impls use. SearXNG is not here: it is not a Seren service and speaks
+# no bearer.
+SEREN_SERVICES = ("memory", "runtime_host", "scheduler")
 
 
 @dataclass
 class ServicesConfig:
-    """Base URLs for the Seren services the builtin tools reach through.
+    """Base URLs and credentials for the Seren services the builtin tools
+    reach through.
 
     These are the DI targets: each builtin tool takes an httpx.AsyncClient
     named after a service (memory, runtime_host, searxng, scheduler); the
@@ -92,26 +132,91 @@ class ServicesConfig:
     Defaults are localhost + the family port convention, so a zero-config
     run on the cluster head Just Works. Point them across the LAN in yaml
     for a split deploy.
+
+    TOKENS. A stack installed with --gen-token has a bearer on Memory and on
+    Lodestar, and until this block existed the builtins had no way to send
+    one - every remember/recall/start_service came back 401 with no config
+    key to fix it. The three family pointers (inline / env-var name /
+    keyring ref, same precedence as seren_meninges.credentials) exist here
+    twice over: a shared set that every Seren service gets, and a
+    per-service set that wins for that one service. One cluster token goes
+    in the shared slot; a split deploy with different tokens per box uses
+    the per-service ones.
     """
     memory_url: str = "http://127.0.0.1:7420"        # SerenMemory
     runtime_host_url: str = "http://127.0.0.1:6361"  # SerenLodestar (cluster head)
     searxng_url: str = "http://127.0.0.1:8080"       # SearXNG metasearch
-    scheduler_url: str = "http://127.0.0.1:6361"     # scheduler surface (RuntimeHost today)
+    scheduler_url: str = "http://127.0.0.1:6361"     # scheduler surface (Lodestar)
     timeout_seconds: float = 15.0                    # per-request client timeout
+
+    # Shared credential for every Seren service (never SearXNG).
+    bearer_token: str = field(default="", repr=False)
+    bearer_token_env: str = ""
+    bearer_token_keyring: str = ""
+    # Per-service credentials; each wins over the shared one for its service.
+    memory_bearer_token: str = field(default="", repr=False)
+    memory_bearer_token_env: str = ""
+    memory_bearer_token_keyring: str = ""
+    runtime_host_bearer_token: str = field(default="", repr=False)
+    runtime_host_bearer_token_env: str = ""
+    runtime_host_bearer_token_keyring: str = ""
+    scheduler_bearer_token: str = field(default="", repr=False)
+    scheduler_bearer_token_env: str = ""
+    scheduler_bearer_token_keyring: str = ""
+
+    def resolve_bearer(self, service: str) -> str:
+        """The token to PRESENT to *service*, or "" for none.
+
+        Per-service pointers first; if none of the three is set, the shared
+        pointers. Resolution is seren_meninges.credentials.resolve_token,
+        the same call every leaf uses inbound, so "config holds a pointer,
+        not the secret" is true in this direction too.
+        """
+        if service not in SEREN_SERVICES:
+            return ""
+        own = (getattr(self, f"{service}_bearer_token"),
+               getattr(self, f"{service}_bearer_token_keyring"),
+               getattr(self, f"{service}_bearer_token_env"))
+        if any(own):
+            inline, keyring_ref, env_var = own
+        else:
+            inline, keyring_ref, env_var = (self.bearer_token,
+                                            self.bearer_token_keyring,
+                                            self.bearer_token_env)
+        return resolve_token(inline=inline or None, keyring_ref=keyring_ref or None,
+                             env_var=env_var or None)
 
     @classmethod
     def from_dict(cls, d: Optional[dict[str, Any]]) -> "ServicesConfig":
         d = d or {}
         out = cls()
         out.memory_url = str(d.get("memory_url", out.memory_url))
-        out.runtime_host_url = str(d.get("runtime_host_url", out.runtime_host_url))
+        # `lodestar_url` is the family name for the cluster head; the DI
+        # parameter the tools take is still `runtime_host`, so both keys land
+        # in the same place and the older one keeps working.
+        out.runtime_host_url = str(d.get("lodestar_url") or d.get("runtime_host_url")
+                                   or out.runtime_host_url)
         out.searxng_url = str(d.get("searxng_url", out.searxng_url))
         out.scheduler_url = str(d.get("scheduler_url", out.scheduler_url))
         try:
             out.timeout_seconds = float(d.get("timeout_seconds", out.timeout_seconds))
         except (TypeError, ValueError):
             pass  # lenient: unparseable timeout keeps the default
+        for key in _TOKEN_KEYS:
+            if key in d:
+                setattr(out, key, str(d.get(key) or ""))
         return out
+
+
+def _token_keys() -> tuple[str, ...]:
+    suffixes = ("bearer_token", "bearer_token_env", "bearer_token_keyring")
+    keys = list(suffixes)
+    for svc in SEREN_SERVICES:
+        keys += [f"{svc}_{suffix}" for suffix in suffixes]
+    return tuple(keys)
+
+
+_TOKEN_KEYS = _token_keys()
 
 
 @dataclass
@@ -179,10 +284,12 @@ def _apply_env_overrides(cfg: WorkbenchConfig) -> WorkbenchConfig:
     if v := env.get("SEREN_WORKBENCH_TRUST_SYSTEM_STORE"):
         cfg.tls.trust_system_store = v.lower() in ("1", "true", "yes", "on")
     if v := env.get("SEREN_WORKBENCH_TOOLS_DIR"):
-        cfg.dashboard.tools_dir = v
+        cfg.dashboard.tools_dir = _expand(v)
+    if v := env.get("SEREN_WORKBENCH_STATE_FILE"):
+        cfg.dashboard.state_file = _expand(v)
     if v := env.get("SEREN_WORKBENCH_MEMORY_URL"):
         cfg.services.memory_url = v
-    if v := env.get("SEREN_WORKBENCH_RUNTIME_HOST_URL"):
+    if v := env.get("SEREN_WORKBENCH_LODESTAR_URL") or env.get("SEREN_WORKBENCH_RUNTIME_HOST_URL"):
         cfg.services.runtime_host_url = v
     if v := env.get("SEREN_WORKBENCH_SEARXNG_URL"):
         cfg.services.searxng_url = v
@@ -190,6 +297,14 @@ def _apply_env_overrides(cfg: WorkbenchConfig) -> WorkbenchConfig:
         cfg.services.scheduler_url = v
     if v := env.get("SEREN_WORKBENCH_UPDATES_ENABLED"):
         cfg.updates.enabled = v.lower() in ("1", "true", "yes", "on")
+    # Outbound credentials: SEREN_WORKBENCH_SERVICES_BEARER_TOKEN[_ENV|_KEYRING]
+    # for the shared one, SEREN_WORKBENCH_MEMORY_BEARER_TOKEN[...] and so on
+    # per service. The plain SEREN_WORKBENCH_BEARER_TOKEN above is what THIS
+    # service requires of its callers - a different thing, kept apart.
+    for key in _TOKEN_KEYS:
+        env_name = "SEREN_WORKBENCH_" + (key if key.startswith(SEREN_SERVICES) else "services_" + key).upper()
+        if v := env.get(env_name):
+            setattr(cfg.services, key, v)
     return cfg
 
 

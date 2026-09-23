@@ -24,7 +24,7 @@ tools:
     parameters: []
 ```
 
-Save it as `/opt/seren/tools/disk.yaml`, then:
+Save it as `~/seren-workbench/tools/disk.yaml` (or wherever `dashboard.tools_dir` points; `~` works), then:
 
 ```bash
 curl -X POST localhost:7425/tools/manifests/reload
@@ -72,7 +72,7 @@ Makes an HTTP call.
       method: POST
       path: /notes/{note_id}/amend
       headers:
-        Authorization: "Bearer {token}"
+        X-Request-Source: "workbench/{note_id}"
       body_template: '{"text": "{text}", "pinned": {pinned}}'
 ```
 
@@ -87,6 +87,33 @@ Makes an HTTP call.
 
 A `configuration:` block at the top of the file sets `cwd` / `base_url`
 defaults for every tool in it.
+
+### Sending a token
+
+If the service behind a web tool wants a bearer, **don't make it a
+parameter**. A `{token}` slot means the model has to hold the secret and
+hand it over on every call, and it shows up in the schema it reads. Name it
+once for the file instead:
+
+```yaml
+configuration:
+  base_url: http://127.0.0.1:7421
+  bearer_token_env: SEREN_MARGIN_TOKEN     # the NAME of an env var
+  # bearer_token_keyring: seren/margin     # or a keyring ref
+  # bearer_token: "..."                    # or, as a last resort, inline
+```
+
+Every `kind: web` tool in the file that doesn't set its own `Authorization`
+header then sends `Bearer <value>`, resolved *at call time* - rotate the
+variable and the next call uses the new one. Same three pointers, same
+precedence, as every `server:` block in the Seren family.
+
+### One place a web tool can't point
+
+A tool whose target is the Workbench's own listener is refused - at propose
+time and again when called. The builtin tools are how the model reaches the
+Workbench; a manifest tool that POSTs to `/proposals/{id}/approve` is the
+model approving its own next proposal, however friendly its description.
 
 ---
 
@@ -188,6 +215,7 @@ A service can host its own manifest and you point at it:
 ```yaml
 tools:
   - from: http://127.0.0.1:7421/mcp-manifest
+    bearer_token_env: SEREN_MARGIN_TOKEN     # only if that service wants one
     overrides:
       - name: note_to_self
         description: Custom wording that fits this deployment better.
@@ -196,6 +224,17 @@ tools:
 Fetched at startup and on reload, three attempts, two seconds apart. If it
 fails the rest of your tools still load. Imports don't chain — a remote
 manifest containing its own `from:` is skipped.
+
+Two things a remote manifest can't do:
+
+- **Hand you a program.** Only `kind: web` tools are accepted from an
+  import. A `kind: process` entry is skipped and named in `skipped` with the
+  reason - it arrived over plain HTTP from a server that could change it
+  before your next reload, which is not what "reviewed" means. Want it?
+  Copy it inline, where you can read it.
+- **Name a credential.** The token the imported tools present is the one
+  on *your* stub (`bearer_token_env` above), never one the remote file
+  declares. Which secret on this box a tool may read is your call.
 
 ---
 
@@ -217,7 +256,10 @@ Things reload deliberately will **not** do:
   reported. Builtins were protected by registration order before reload
   existed; now the guard is explicit.
 - **Re-enable what you switched off.** A reload is a statement about what's
-  on disk, not about what's allowed to run.
+  on disk, not about what's allowed to run. Neither does a restart: toggles
+  are remembered in `<tools_dir>/.tool-state.json` (`dashboard.state_file`
+  to move it). A name you list in `tools_enabled` / `tools_disabled` is your
+  written word and beats the file.
 - **Treat a missing directory as "delete everything."** An unmounted volume
   leaves your tools alone. An *empty* directory does mean remove them all —
   that distinction is the whole point.

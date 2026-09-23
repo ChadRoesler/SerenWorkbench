@@ -20,7 +20,7 @@ TOOLBOX = "Cluster"
 GET_CLUSTER_STATUS_TOOL_DEF = {
     "name": "get_cluster_status",
     "description": (
-        "Returns the full cluster topology from RuntimeHost. Use this "
+        "Returns the full cluster topology from Lodestar. Use this "
         "when the user asks about the cluster ('what nodes are there', "
         "'is everything online', 'show me the cluster'). Returns JSON "
         "with node_count, online_count, and a 'nodes' array - each node "
@@ -43,7 +43,7 @@ async def get_cluster_status(
         resp = await runtime_host.get("/api/v1/system/status")
         if not resp.is_success:
             return _err(
-                f"RuntimeHost returned HTTP {resp.status_code}.",
+                f"Lodestar returned HTTP {resp.status_code}.",
                 "Cluster head may be down.",
             )
 
@@ -95,9 +95,9 @@ async def get_cluster_status(
         }, indent=2)
 
     except httpx.RequestError as ex:
-        return _err(f"RuntimeHost unreachable: {ex}", "Check RuntimeHost is running.")
+        return _err(f"Lodestar unreachable: {ex}", "Check Lodestar is running.")
     except httpx.TimeoutException:
-        return _err("RuntimeHost timed out.", "Try again.")
+        return _err("Lodestar timed out.", "Try again.")
     except (json.JSONDecodeError, KeyError) as ex:
         return _err(f"Malformed response: {ex}", "Schema mismatch.")
 

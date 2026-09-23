@@ -89,7 +89,7 @@ async def time_since_last_message(
         if not resp.is_success:
             body = resp.text
             return _err(
-                f"RuntimeHost returned HTTP {resp.status_code}.",
+                f"Lodestar returned HTTP {resp.status_code}.",
                 body[:500] + "…" if len(body) > 500 else body,
             )
 
@@ -120,9 +120,9 @@ async def time_since_last_message(
         }, indent=2)
 
     except httpx.RequestError as ex:
-        return _err(f"RuntimeHost unreachable: {ex}", "Check RuntimeHost is running.")
+        return _err(f"Lodestar unreachable: {ex}", "Check Lodestar is running.")
     except httpx.TimeoutException:
-        return _err("RuntimeHost timed out.", "Try again.")
+        return _err("Lodestar timed out.", "Try again.")
 
 
 async def preserve_memory_verbatim(

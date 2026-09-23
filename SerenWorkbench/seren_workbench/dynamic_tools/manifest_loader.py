@@ -211,6 +211,18 @@ class ManifestLoader:
                 if o.name:
                     overrides[o.name] = o  # type: ignore
 
+        # The credential the LOCAL stub names is what the imported tools
+        # present. It rides on the remote manifest's configuration block so
+        # the web dispatcher finds it in the one place it looks. A remote
+        # file naming its own credential pointers is ignored: which secret
+        # on this box a tool may read is the operator's call, not the
+        # server's being imported from.
+        if remote_manifest.configuration is None:
+            remote_manifest.configuration = ManifestConfiguration()
+        remote_manifest.configuration.bearer_token = remote_entry.bearer_token
+        remote_manifest.configuration.bearer_token_env = remote_entry.bearer_token_env
+        remote_manifest.configuration.bearer_token_keyring = remote_entry.bearer_token_keyring
+
         for tool_entry in remote_manifest.tools:
             if not tool_entry.name:
                 result.skipped_tools.append(
@@ -230,6 +242,21 @@ class ManifestLoader:
                 result.skipped_tools.append(
                     (tool_entry.name or "",
                      f"tool '{tool_entry.name}' from remote '{url}' has no invoke.kind; skipped")
+                )
+                continue
+
+            # A remote manifest may only hand us WEB tools. A `kind: process`
+            # arriving over an unauthenticated plain-HTTP fetch, re-fetched
+            # on every reload, is a remote host choosing what binary this
+            # box runs next time someone hits reload. If the tool is wanted,
+            # the operator copies it inline - which is exactly what makes
+            # it reviewable.
+            if (tool_entry.invoke.kind or "").strip().lower() != "web":
+                result.skipped_tools.append(
+                    (tool_entry.name or "",
+                     f"tool '{tool_entry.name}' from remote '{url}' is kind="
+                     f"{tool_entry.invoke.kind!r}; remote imports may only carry "
+                     "kind: web. Copy the tool inline if you want it to run a process.")
                 )
                 continue
 
@@ -323,7 +350,10 @@ def _dict_to_manifest(d: dict | None) -> ManifestFile:
     cfg = d.get("configuration")
     if isinstance(cfg, dict):
         mf.configuration = ManifestConfiguration(
-            cwd=cfg.get("cwd"), base_url=cfg.get("base_url")
+            cwd=cfg.get("cwd"), base_url=cfg.get("base_url"),
+            bearer_token=_opt_str(cfg.get("bearer_token")),
+            bearer_token_env=_opt_str(cfg.get("bearer_token_env")),
+            bearer_token_keyring=_opt_str(cfg.get("bearer_token_keyring")),
         )
 
     tools_raw = d.get("tools")
@@ -339,11 +369,19 @@ def _dict_to_manifest(d: dict | None) -> ManifestFile:
             entry.test = t.get("test")
             entry.from_ = t.get("from")
             entry.overrides = _parse_overrides(t.get("overrides"))
+            entry.bearer_token = _opt_str(t.get("bearer_token"))
+            entry.bearer_token_env = _opt_str(t.get("bearer_token_env"))
+            entry.bearer_token_keyring = _opt_str(t.get("bearer_token_keyring"))
             entry.invoke = _parse_invoke(t.get("invoke"))
             entry.parameters = _parse_parameters(t.get("parameters"))
             mf.tools.append(entry)
 
     return mf
+
+
+def _opt_str(v) -> str | None:
+    """A pointer is a string or absent; an empty string is absent too."""
+    return str(v) if v not in (None, "") else None
 
 
 def _parse_invoke(d: dict | None) -> ToolInvoke | None:

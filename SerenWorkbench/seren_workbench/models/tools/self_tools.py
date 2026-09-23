@@ -44,7 +44,7 @@ async def get_self_context(runtime_host: httpx.AsyncClient = None, **kwargs) -> 
         resp = await runtime_host.get("/api/v1/system/status")
         if not resp.is_success:
             return _err(
-                f"Could not orient - RuntimeHost returned HTTP {resp.status_code}.",
+                f"Could not orient - Lodestar returned HTTP {resp.status_code}.",
                 "The cluster head isn't reachable.",
             )
 
@@ -58,7 +58,7 @@ async def get_self_context(runtime_host: httpx.AsyncClient = None, **kwargs) -> 
         }, indent=2)
 
     except httpx.RequestError as ex:
-        return _err(f"RuntimeHost unreachable: {ex}", "Operating blind.")
+        return _err(f"Lodestar unreachable: {ex}", "Operating blind.")
     except httpx.TimeoutException:
         return _err("Self-context query timed out.", "Cluster head is slow or down.")
     except (json.JSONDecodeError, KeyError) as ex:

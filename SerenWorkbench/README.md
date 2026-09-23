@@ -45,13 +45,23 @@ The MCP endpoint is at `/mcp/` (trailing slash — a bare `/mcp` gets a 307).
 ```
 
 Set a bearer token in the config (or `SEREN_WORKBENCH_BEARER_TOKEN`) before
-this leaves localhost.
+this leaves localhost - a bind beyond loopback with no token refuses to start
+and prints the ways out.
+
+If Memory or Lodestar were installed with a token, tell the builtins what to
+present:
+
+```yaml
+services:
+  bearer_token_env: SEREN_CLUSTER_TOKEN        # one token for memory / lodestar / scheduler
+  # memory_bearer_token_env: SEREN_MEMORY_TOKEN  # or per service
+```
 
 ---
 
 ## Adding your own tools
 
-Drop a YAML file in `tools_dir`:
+Drop a YAML file in `tools_dir` (default `~/seren-workbench/tools`):
 
 ```yaml
 schema_version: 1
@@ -130,6 +140,10 @@ something you switched off, and it treats a *missing* tools directory as
 "something's wrong" rather than "delete everything." A tool exists because
 a person put it somewhere.
 
+Neither does a restart re-enable anything: toggles are remembered in
+`<tools_dir>/.tool-state.json`. A remote `from:` import may only hand you
+`kind: web` tools, and no tool may point back at the Workbench itself.
+
 ---
 
 ## Endpoints
@@ -144,7 +158,7 @@ a person put it somewhere.
 | `POST /tools/manifests/reload` | re-read the directory, apply it live |
 | `GET /proposals` | tools the model has asked for |
 | `GET /proposals/{id}` | one, with the full manifest and what it would run |
-| `POST /proposals/{id}/approve` | install it and bring it live |
+| `POST /proposals/{id}/approve` | install it, switched off |
 | `POST /proposals/{id}/reject` | refuse it, with a critique |
 | `GET /config` | resolved config, secrets masked |
 | `GET /logs` | recent server logs |

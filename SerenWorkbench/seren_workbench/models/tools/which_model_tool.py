@@ -43,7 +43,7 @@ async def which_model(
         resp = await runtime_host.get("/api/v1/service/llama/status")
         if not resp.is_success:
             return _err(
-                f"RuntimeHost returned HTTP {resp.status_code} for llama.",
+                f"Lodestar returned HTTP {resp.status_code} for llama.",
                 "Llama service may not be running.",
             )
 
@@ -67,9 +67,9 @@ async def which_model(
         return json.dumps(result, indent=2)
 
     except httpx.RequestError as ex:
-        return _err(f"RuntimeHost unreachable: {ex}", "Check RuntimeHost is running.")
+        return _err(f"Lodestar unreachable: {ex}", "Check Lodestar is running.")
     except httpx.TimeoutException:
-        return _err("RuntimeHost timed out.", "Try again.")
+        return _err("Lodestar timed out.", "Try again.")
     except (json.JSONDecodeError, KeyError) as ex:
         return _err(f"Malformed response: {ex}", "Schema mismatch.")
 

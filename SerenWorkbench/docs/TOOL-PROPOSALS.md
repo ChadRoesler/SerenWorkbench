@@ -78,7 +78,9 @@ last moment you can change your mind is before you've ever seen the thing
 sitting in your tool list. It also gives you somewhere to put a tool you're
 willing to keep but not willing to leave live.
 
-Enabling sticks — a later reload won't switch it back off.
+Enabling sticks — a later reload won't switch it back off. And *disabled*
+sticks too: the off-state is written to `<tools_dir>/.tool-state.json`, so a
+reboot does not quietly bring an approved-but-off tool live. (It used to.)
 
 ### What to actually look at
 
@@ -106,7 +108,15 @@ rule already blocks the flag-injection case; see
 [TOOL-MANIFESTS.md](TOOL-MANIFESTS.md).)
 
 `kind: web` is the lower-stakes case — it can only reach the `base_url` in
-the manifest. Still check which host that is.
+the manifest. Still check which host that is. If the block carries
+`sends_credential`, the tool would present a token from this box's
+environment (named, never valued: `env:SOME_VAR`, `keyring:ref` or `inline
+literal`) to that host - ask whether the host deserves it.
+
+Two things you will never be asked to review, because they are refused
+before staging: a remote `from:` import, and a web tool whose target is this
+Workbench itself. The second is the model reaching the approval route
+through a tool; however friendly the description, no.
 
 ### Rejecting well
 

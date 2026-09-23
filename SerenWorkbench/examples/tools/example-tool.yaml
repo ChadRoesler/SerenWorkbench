@@ -25,6 +25,10 @@ metadata:
 # Defaults for every tool below; each tool may override them.
 configuration:
   cwd: /tmp
+  # Credential for every kind=web tool in this file that does not set its
+  # own Authorization header. A POINTER, resolved on each call: the NAME of
+  # an env var, or a keyring ref, or (the escape hatch) an inline literal.
+  # bearer_token_env: SEREN_MARGIN_TOKEN
 
 tools:
 
@@ -56,23 +60,25 @@ tools:
         pattern: "/[A-Za-z0-9._/-]*"
 
   # ── kind=web ────────────────────────────────────────────────────────────
+  # These two talk to SerenMargin, the model's OWN notebook - not the
+  # operator's notes, and not something a person reads. They are here as
+  # the shape of a web tool; in a real deploy you would import Margin's own
+  # manifest instead (the `from:` stub at the bottom) and get all six.
   - name: example_recent_notes
     description: >
-      List the operator's most recent margin notes. Use when you need to
-      check what was already written down before writing it down again.
+      Read your own most recent notes back. Use when you need to check what
+      you already wrote down before writing it down again.
     invoke:
       kind: web
       base_url: http://127.0.0.1:7421
       method: GET
       path: /notes
-      headers:
-        # Header VALUES substitute. Header names deliberately do not.
-        Authorization: "Bearer {token}"
+      # If this Margin wants a token, name it ONCE for the whole file (see
+      # `configuration:` below) rather than making it a parameter the model
+      # has to hold and hand over on every call. A tool that sets its own
+      # Authorization header (header VALUES substitute; names do not)
+      # keeps it.
     parameters:
-      - name: token
-        type: string
-        required: true
-        description: Bearer token for the SerenMargin instance.
       - name: window
         type: string
         required: false
@@ -85,7 +91,7 @@ tools:
   # ── kind=web with a body ────────────────────────────────────────────────
   - name: example_append_note
     description: >
-      Append a line to an existing margin note. Use to add a detail to
+      Append a line to one of your own notes. Use to add a detail to
       something already recorded rather than creating a near-duplicate.
     invoke:
       kind: web
@@ -113,9 +119,13 @@ tools:
 
 # ── Importing a service's own manifest ─────────────────────────────────────
 # A service can host its tool definitions and you point at them, so the
-# definitions stay correct when the service is upgraded. Uncomment to try:
+# definitions stay correct when the service is upgraded. Only kind=web tools
+# are accepted from a remote manifest; a process entry is skipped and
+# reported. The credential the imported tools present is named HERE, on
+# your stub - never taken from the remote file. Uncomment to try:
 #
 #  - from: http://127.0.0.1:7421/mcp-manifest
+#    bearer_token_env: SEREN_MARGIN_TOKEN      # only if that Margin wants one
 #    overrides:
 #      - name: note_to_self
 #        description: Wording that fits this particular deployment better.

@@ -83,7 +83,13 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
             tools_enabled=cfg.dashboard.tools_enabled,
             tools_disabled=cfg.dashboard.tools_disabled,
             exclude=set() if cfg.dashboard.proposals_enabled else proposal_tool_names,
+            # Where a toggle is remembered so it is still in force after a
+            # restart. Beside the manifests by default.
+            state_path=cfg.dashboard.resolve_state_file(),
         )
+        # Our own listener, handed to everything that must refuse to point a
+        # tool back at it (the web dispatcher, the proposal validator).
+        self_addr = (cfg.server.host, int(cfg.server.port))
 
         # ── Tool proposals ──────────────────────────────────────────────
         # The staging store. Note what it is NOT given: any way to register
@@ -97,6 +103,7 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
                 proposals_dir=cfg.dashboard.resolve_proposals_dir(),
                 tools_dir=cfg.dashboard.tools_dir,
                 live_names=lambda: {t.name for t in app.state.tool_registry.all_tools()},
+                self_addr=self_addr,
             )
         else:
             app.state.proposals = None
@@ -140,8 +147,15 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
             svc = cfg.services
             timeout = httpx.Timeout(svc.timeout_seconds)
 
-            async def _client(base_url: str) -> httpx.AsyncClient:
-                c = httpx.AsyncClient(base_url=base_url, timeout=timeout)
+            async def _client(base_url: str, service: str = "") -> httpx.AsyncClient:
+                # The bearer this Workbench PRESENTS to a Seren service, when
+                # one is configured. Resolved once at startup through the same
+                # resolver the leaves use inbound. A stack installed with
+                # --gen-token had no way to do this before, so every builtin
+                # 401'd with no config key to fix it.
+                token = svc.resolve_bearer(service) if service else ""
+                headers = {"Authorization": f"Bearer {token}"} if token else None
+                c = httpx.AsyncClient(base_url=base_url, timeout=timeout, headers=headers)
                 await _stack.enter_async_context(c)
                 return c
 
@@ -151,13 +165,14 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
                 httpx.AsyncClient(timeout=timeout))
 
             app.state.di_registry = {
-                "memory": await _client(svc.memory_url),
-                "runtime_host": await _client(svc.runtime_host_url),
+                "memory": await _client(svc.memory_url, "memory"),
+                "runtime_host": await _client(svc.runtime_host_url, "runtime_host"),
                 "searxng": await _client(svc.searxng_url),
-                "scheduler": await _client(svc.scheduler_url),
+                "scheduler": await _client(svc.scheduler_url, "scheduler"),
                 "config": mcp_config,
                 "proposals": app.state.proposals,
                 "_dynamic_web_client": _general,
+                "_self_addr": self_addr,
             }
 
             # Mount the MCP surface — conditionally, so a missing `mcp`

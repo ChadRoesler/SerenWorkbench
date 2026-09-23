@@ -54,7 +54,7 @@ def offline_update_checks(monkeypatch):
 
 
 @pytest.fixture
-def make_client():
+def make_client(tmp_path):
     """Factory fixture. Call it with an WorkbenchConfig to get a fully wired
     TestClient that tears down cleanly after the test.
 
@@ -65,12 +65,20 @@ def make_client():
             return make_client(WorkbenchConfig(...))
 
     ``raise_server_exceptions`` is forwarded as a kwarg when needed.
+
+    A default config is pointed at a per-test tools directory. The registry
+    REMEMBERS toggles in a state file beside the manifests now, and the
+    default location is under the real home directory - a test that flips
+    fetch_url off must never leave that on the developer's box for the next
+    run to find.
     """
     _clients: list[TestClient] = []
 
     def _factory(cfg: WorkbenchConfig | None = None,
                  raise_server_exceptions: bool = False) -> TestClient:
-        cfg = cfg or load_config()
+        if cfg is None:
+            cfg = load_config()
+            cfg.dashboard.tools_dir = str(tmp_path / "tools")
         app = create_app(cfg)
         tc = TestClient(app, raise_server_exceptions=raise_server_exceptions)
         tc.__enter__()
