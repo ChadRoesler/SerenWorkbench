@@ -290,6 +290,9 @@ def make_dynamic_registrar(registry, di_registry, audit_log=None):
     if web_client is None:
         web_client = httpx.AsyncClient()
     log = audit_log if audit_log is not None else ToolAuditLog()
+    # (host, port) this Workbench listens on, so a web tool aimed back at it
+    # is refused at dispatch. Absent in bare test registries = no guard.
+    self_addr = di_registry.get("_self_addr")
 
     def _register_one(mcp, tool) -> None:
         if tool.type != "dynamic" or tool.entry is None:
@@ -300,6 +303,7 @@ def make_dynamic_registrar(registry, di_registry, audit_log=None):
             source_path=tool.source,
             http_client=web_client,
             audit_log=log,
+            self_addr=self_addr,
         )
         _register_dispatched(mcp, dispatched, tool, registry)
 

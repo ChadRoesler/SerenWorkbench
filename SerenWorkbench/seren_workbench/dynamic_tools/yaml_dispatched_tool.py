@@ -48,12 +48,15 @@ class YamlDispatchedTool:
         source_path: str,
         http_client: Any,  # httpx.AsyncClient
         audit_log: ToolAuditLog,
+        self_addr: Optional[Tuple[str, int]] = None,
     ) -> None:
         self._entry = entry
         self._owner = owner
         self._source_path = source_path
         self._http_client = http_client
         self._audit_log = audit_log
+        # This Workbench's own (host, port): a web tool aimed at it is refused.
+        self._self_addr = self_addr
         self._param_types = self._build_param_types(entry)
         # Compile every `pattern:` ONCE, here, rather than per call. Failures
         # are kept (not raised) so one broken regex disables one parameter
@@ -149,6 +152,7 @@ class YamlDispatchedTool:
                     args,
                     self._param_types,
                     self._http_client,
+                    self_addr=self._self_addr,
                 )
             else:
                 result = {

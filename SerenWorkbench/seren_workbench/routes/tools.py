@@ -111,7 +111,7 @@ async def set_tool_state(request: Request):
                 {"ok": False, "error": f"no action '{tool_name}.{action_name}'"},
                 status_code=404)
         return {"ok": True, "tool": tool_name, "action": action_name,
-                "enabled": enabled}
+                "enabled": enabled, **_remembered(reg)}
     else:
         ok = (reg.enable_tool(tool_name)
               if enabled else reg.disable_tool(tool_name))
@@ -119,4 +119,15 @@ async def set_tool_state(request: Request):
             return JSONResponse(
                 {"ok": False, "error": f"no tool '{tool_name}'"},
                 status_code=404)
-        return {"ok": True, "tool": tool_name, "enabled": enabled}
+        return {"ok": True, "tool": tool_name, "enabled": enabled, **_remembered(reg)}
+
+
+def _remembered(reg) -> dict:
+    """Whether this toggle will still be in force after a restart, and why
+    not when it won't. A switch that quietly forgets is worse than none."""
+    out = {"persisted": bool(getattr(reg, "persisted", False)),
+           "state_file": getattr(reg, "state_path", None)}
+    err = getattr(reg, "persist_error", "")
+    if err:
+        out["persist_error"] = err
+    return out

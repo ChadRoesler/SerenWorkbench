@@ -43,9 +43,35 @@ class ManifestAuthor:
 
 @dataclass
 class ManifestConfiguration:
-    """Tool-set-wide defaults; tools can override per-invoke."""
+    """Tool-set-wide defaults; tools can override per-invoke.
+
+    The three bearer pointers are the family's usual trio (inline literal /
+    env-var NAME / keyring ref, see seren_meninges.credentials). When set,
+    every kind=web tool in the file that does not carry its own
+    Authorization header sends `Bearer <resolved>` - resolved at call time,
+    so the secret is never stored in the parsed manifest. This is how a
+    tool reaches a service that wants a token WITHOUT the token being a
+    parameter the model has to hold and hand over on every call.
+    """
     cwd: Optional[str] = None
     base_url: Optional[str] = None
+    bearer_token: Optional[str] = None
+    bearer_token_env: Optional[str] = None
+    bearer_token_keyring: Optional[str] = None
+
+    @property
+    def has_bearer(self) -> bool:
+        return bool(self.bearer_token or self.bearer_token_env or self.bearer_token_keyring)
+
+    def credential_label(self) -> str:
+        """Which pointer is set, for a reviewer. Never the value."""
+        if self.bearer_token:
+            return "inline literal"
+        if self.bearer_token_keyring:
+            return f"keyring:{self.bearer_token_keyring}"
+        if self.bearer_token_env:
+            return f"env:{self.bearer_token_env}"
+        return ""
 
 
 @dataclass
@@ -68,6 +94,13 @@ class ToolEntry:
     # -- Remote-import fields --
     from_: Optional[str] = None  # YAML key: from
     overrides: Optional[List["ToolOverrideEntry"]] = None
+    # Credential for the imported tools, set on the LOCAL stub that points
+    # at the remote manifest (the remote file is never trusted to name a
+    # secret on this box). Same trio as ManifestConfiguration; applied to
+    # every web tool the import yields.
+    bearer_token: Optional[str] = None
+    bearer_token_env: Optional[str] = None
+    bearer_token_keyring: Optional[str] = None
 
     @property
     def is_remote(self) -> bool:

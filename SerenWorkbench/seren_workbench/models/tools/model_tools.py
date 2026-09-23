@@ -59,7 +59,7 @@ async def list_models(
         resp = await runtime_host.get(f"/api/v1/service/{service}/manifest")
         if not resp.is_success:
             return _err(
-                f"RuntimeHost returned HTTP {resp.status_code} for {service}.",
+                f"Lodestar returned HTTP {resp.status_code} for {service}.",
                 "Service may not be installed on any online node.",
             )
 
@@ -83,9 +83,9 @@ async def list_models(
         )
 
     except httpx.RequestError as ex:
-        return _err(f"RuntimeHost unreachable: {ex}", "Check RuntimeHost is running.")
+        return _err(f"Lodestar unreachable: {ex}", "Check Lodestar is running.")
     except httpx.TimeoutException:
-        return _err("RuntimeHost timed out.", "Try again.")
+        return _err("Lodestar timed out.", "Try again.")
     except (json.JSONDecodeError, KeyError) as ex:
         return _err(f"Malformed response: {ex}", "Schema mismatch.")
 

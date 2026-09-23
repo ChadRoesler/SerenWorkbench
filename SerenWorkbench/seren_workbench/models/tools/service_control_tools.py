@@ -1,7 +1,7 @@
 # ════════════════════════════════════════════════════════════════════════
 #  ServiceControlTools - start/stop/restart cluster services.
 #
-#  The LLM can manage its own compute via RuntimeHost's service control
+#  The LLM can manage its own compute via Lodestar's service control
 #  endpoints. Allowed: llama, kokoro, comfy, whisper, chroma, searxng.
 # ════════════════════════════════════════════════════════════════════════
 
@@ -24,7 +24,7 @@ ALLOWED_SERVICES = {"llama", "kokoro", "comfy", "whisper", "chroma", "searxng"}
 START_TOOL_DEF = {
     "name": "start_service",
     "description": (
-        "Tells RuntimeHost to start the given service. Use this when the "
+        "Tells Lodestar to start the given service. Use this when the "
         "user asks you to turn something on ('start llama', 'run kokoro', "
         "'enable comfy'). The service must be installed on at least one "
         "node. Returns JSON with the service name and the node it started on. "
@@ -46,7 +46,7 @@ START_TOOL_DEF = {
 STOP_TOOL_DEF = {
     "name": "stop_service",
     "description": (
-        "Tells RuntimeHost to stop the given service. Use this when the "
+        "Tells Lodestar to stop the given service. Use this when the "
         "user asks you to turn something off ('stop llama', 'stop comfy'). "
         "Returns JSON with the service name and the node it stopped on. "
         f"Allowed services: {', '.join(sorted(ALLOWED_SERVICES))}."
@@ -66,7 +66,7 @@ STOP_TOOL_DEF = {
 RESTART_TOOL_DEF = {
     "name": "restart_service",
     "description": (
-        "Tells RuntimeHost to restart the given service. Use this when the "
+        "Tells Lodestar to restart the given service. Use this when the "
         "user reports a service is acting up ('llama is broken', 'kokoro "
         "is stuck', 'restart comfy'). Returns JSON with the service name "
         "and the node it restarted on. After calling this, wait_for_service "
@@ -101,7 +101,7 @@ async def _control_service(service: str, action: str, runtime_host: httpx.AsyncC
         if not resp.is_success:
             body = resp.text
             return _err(
-                f"RuntimeHost returned HTTP {resp.status_code} for "
+                f"Lodestar returned HTTP {resp.status_code} for "
                 f"{action} on {service}.",
                 body[:500] + "…" if len(body) > 500 else body,
             )
@@ -120,9 +120,9 @@ async def _control_service(service: str, action: str, runtime_host: httpx.AsyncC
         }, indent=2)
 
     except httpx.RequestError as ex:
-        return _err(f"RuntimeHost unreachable: {ex}", "Check RuntimeHost is running.")
+        return _err(f"Lodestar unreachable: {ex}", "Check Lodestar is running.")
     except httpx.TimeoutException:
-        return _err(f"RuntimeHost timed out doing {action} on {service}.", "Try again.")
+        return _err(f"Lodestar timed out doing {action} on {service}.", "Try again.")
     except (json.JSONDecodeError, KeyError) as ex:
         return _err(f"Malformed response: {ex}", "Schema mismatch.")
 

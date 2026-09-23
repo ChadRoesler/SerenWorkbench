@@ -9,7 +9,7 @@
 #  so someone on beefier iron (Xavier 32GB, a workstation) can crank a knob
 #  up. Absent config == Nano defaults.
 #
-#  YAML, not JSON - matches RuntimeHost + agent.
+#  YAML, not JSON - matches Lodestar + Observatory.
 #
 #  LENIENT BY DESIGN (Postel)
 #

@@ -116,6 +116,7 @@ async def approve_proposal(request: Request, pid: str):
         "reload": reload_result,
         "installed": True,
         "enabled": False,
+        "persisted": bool(getattr(registry, "persisted", False)),
         "next_step": (
             f"Installed and registered, currently DISABLED. Enable "
             f"{', '.join(p.tool_names)} from the Tool State tab when you want "

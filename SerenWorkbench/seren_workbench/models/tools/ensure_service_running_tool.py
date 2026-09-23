@@ -76,7 +76,7 @@ async def ensure_service_running(
         status_resp = await runtime_host.get(f"/api/v1/service/{service}/status")
         if not status_resp.is_success:
             return _err(
-                f"RuntimeHost returned HTTP {status_resp.status_code} checking {service}.",
+                f"Lodestar returned HTTP {status_resp.status_code} checking {service}.",
                 "Cluster head may be down.",
             )
 
@@ -100,7 +100,7 @@ async def ensure_service_running(
         if not start_resp.is_success:
             body = start_resp.text
             return _err(
-                f"RuntimeHost returned HTTP {start_resp.status_code} starting {service}.",
+                f"Lodestar returned HTTP {start_resp.status_code} starting {service}.",
                 body[:500] + "…" if len(body) > 500 else body,
             )
 
@@ -145,9 +145,9 @@ async def ensure_service_running(
             await asyncio.sleep(poll_interval)
 
     except httpx.RequestError as ex:
-        return _err(f"RuntimeHost unreachable: {ex}", "Check RuntimeHost is running.")
+        return _err(f"Lodestar unreachable: {ex}", "Check Lodestar is running.")
     except httpx.TimeoutException:
-        return _err("RuntimeHost timed out.", "Try again.")
+        return _err("Lodestar timed out.", "Try again.")
     except (json.JSONDecodeError, KeyError) as ex:
         return _err(f"Malformed response: {ex}", "Schema mismatch.")
 

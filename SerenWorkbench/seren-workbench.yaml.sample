@@ -21,30 +21,52 @@ server:
   #   A host beyond loopback with no token REFUSES TO START and prints the
   #   three ways out. Set this true (or <PREFIX>_ALLOW_OPEN_LAN=1) to run open on
   #   purpose - a trusted LAN, a lab - and it will say so on every boot.
-  port: 7425             # family convention: memory 7420, loci-v 7421,
-                          # loci-nv 7422, scc-nv 7423, scc-v 7424,
-                          # workbench 7425, probe 7430
+  port: 7425             # family map: lodestar 6361, memory 7420,
+                          # margin 7421, loci 7422, callosum 7423,
+                          # workbench 7425, probe 7430, observatory 7777
+  # What THIS service requires of its callers. Pointer, not secret: prefer
+  # bearer_token_env / bearer_token_keyring over the inline literal.
   bearer_token: ""
 
-# ── Seren service base URLs (the DI targets) ─────────────────────────────
+# ── Seren service base URLs and credentials (the DI targets) ─────────────
 # The builtin tools reach other Seren services through named httpx clients
 # built from these URLs. Defaults assume everything runs on this host at
 # the family ports; point them across the LAN for a split deploy.
-# Env overrides: SEREN_WORKBENCH_MEMORY_URL / _RUNTIME_HOST_URL /
+# Env overrides: SEREN_WORKBENCH_MEMORY_URL / _LODESTAR_URL /
 # _SEARXNG_URL / _SCHEDULER_URL.
+#
+# TOKENS. If Memory or Lodestar were installed with a bearer (--gen-token),
+# the builtins have to present it or every remember / recall / start_service
+# comes back 401. One cluster token goes in the shared slot; a split deploy
+# with a different token per box uses the per-service ones, which win.
+# Same three pointers as everywhere in the family: bearer_token (inline
+# literal, the escape hatch), bearer_token_env (NAME of an env var),
+# bearer_token_keyring ("service/username"). Env overrides:
+# SEREN_WORKBENCH_SERVICES_BEARER_TOKEN[_ENV|_KEYRING] for the shared one,
+# SEREN_WORKBENCH_MEMORY_BEARER_TOKEN[...] and so on per service.
 services:
   memory_url: http://127.0.0.1:7420        # SerenMemory
-  runtime_host_url: http://127.0.0.1:6361  # SerenRuntimeHost (cluster head)
-  searxng_url: http://127.0.0.1:8080       # SearXNG metasearch
-  scheduler_url: http://127.0.0.1:6361     # scheduler surface (RuntimeHost today)
+  lodestar_url: http://127.0.0.1:6361      # SerenLodestar (cluster head);
+                                           # runtime_host_url still works
+  searxng_url: http://127.0.0.1:8080       # SearXNG metasearch (no token, ever)
+  scheduler_url: http://127.0.0.1:6361     # scheduler surface (Lodestar)
   timeout_seconds: 15.0                    # per-request client timeout
+  # bearer_token_env: SEREN_CLUSTER_TOKEN          # shared by memory / lodestar / scheduler
+  # memory_bearer_token_env: SEREN_MEMORY_TOKEN    # per-service, wins for memory
+  # runtime_host_bearer_token_keyring: seren/lodestar
 
 # ── Dashboard / tool-state seeding ───────────────────────────────────────
-# tools_disabled: these tools start DISABLED (survives restarts, unlike the
-#                 dashboard's in-memory toggles).
+# tools_disabled: these tools start DISABLED.
 # tools_enabled:  if non-empty, it is an ALLOWLIST — every tool NOT named
 #                 here starts disabled. Leave empty for everything-on.
+# state_file:     where the dashboard's own toggles are REMEMBERED, so what
+#                 you switched off (and what you approved but left off) is
+#                 still off after a reboot. Blank => <tools_dir>/.tool-state.json.
+#                 A name listed in tools_enabled / tools_disabled is your
+#                 written word and beats the file.
 # tools_dir:      directory of dynamic-tool YAML manifests (plug-and-play).
+#                 `~` is your home directory. Whoever can write here can make
+#                 the model run a program - see SECURITY.md.
 # proposals_enabled: lets the model ask for new tools via propose_tool. A
 #                    proposal is written to proposals_dir, which NOTHING
 #                    loads - it only becomes callable when an operator
@@ -55,9 +77,10 @@ services:
 #                    safe because the loader globs *.yaml non-recursively.
 dashboard:
   enabled: true
-  tools_dir: /opt/seren/tools
+  tools_dir: ~/seren-workbench/tools
   tools_enabled: []
   tools_disabled: []
+  state_file: ""
   proposals_enabled: true
   proposals_dir: ""
 

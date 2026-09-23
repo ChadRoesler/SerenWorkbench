@@ -22,7 +22,10 @@
 
 from __future__ import annotations
 
-from typing import Dict, Optional
+import ipaddress
+import socket
+from typing import Dict, Optional, Tuple
+from urllib.parse import urlparse
 
 import httpx
 
@@ -32,6 +35,52 @@ from .param_subst import substitute_scalar, substitute_json_body
 MAX_RESPONSE_CHARS = 16_000
 DEFAULT_TIMEOUT_SECONDS = 30
 
+_LOOPBACK_NAMES = {"localhost", "localhost.localdomain", "0.0.0.0", "::", "::1", "127.0.0.1"}
+
+
+def targets_this_workbench(url: str, own_host: str, own_port: int) -> bool:
+    """True when *url* points at the Workbench's own listener.
+
+    A web tool that calls back into this process is the model reaching the
+    operator-only routes through a tool: POST /proposals/{id}/approve from
+    a "helper" a reviewer waved through is the model approving its own
+    next proposal. Builtin tools are how the model reaches the Workbench;
+    a manifest tool never needs to.
+
+    The test is the port plus "is that host me": a loopback or unspecified
+    address, the bound host, or this machine's own name. Not a full
+    interface enumeration - it does not have to be, because a manifest
+    pointing at this box's LAN address on this port is the same author's
+    same tool and the operator-side check at propose time catches it by
+    the same rule.
+    """
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    host = (parsed.hostname or "").strip().lower()
+    if not host:
+        return False
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    if int(port) != int(own_port):
+        return False
+    if host in _LOOPBACK_NAMES or host == (own_host or "").strip().lower():
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+        if ip.is_loopback or ip.is_unspecified:
+            return True
+    except ValueError:
+        pass
+    try:
+        return host in {socket.gethostname().lower(), socket.getfqdn().lower()}
+    except OSError:
+        return False
+
+
+def _has_header(headers: Optional[Dict[str, str]], name: str) -> bool:
+    return any(k.lower() == name.lower() for k in (headers or {}))
+
 
 async def invoke_web(
     invoke: ToolInvoke,
@@ -40,10 +89,12 @@ async def invoke_web(
     args: Dict[str, object],
     param_types: Dict[str, str],
     http_client: httpx.AsyncClient,
+    self_addr: Optional[Tuple[str, int]] = None,
 ) -> dict:
     """Make an HTTP call per the tool's invoke config.
 
-    Returns a dict suitable as an MCP CallToolResult.
+    Returns a dict suitable as an MCP CallToolResult. *self_addr* is this
+    Workbench's own (host, port); a target that resolves to it is refused.
     """
     # Resolve base URL
     base_url = invoke.base_url or (file_config.base_url if file_config else None)
@@ -61,6 +112,14 @@ async def invoke_web(
     # Build full URI
     from urllib.parse import urljoin
     full_url = urljoin(base_url.rstrip("/") + "/", resolved_path.lstrip("/"))
+
+    if self_addr is not None and targets_this_workbench(full_url, *self_addr):
+        return _error(
+            f"tool '{tool_name}' points at this Workbench itself ({full_url}); refused.",
+            hint="A manifest tool may not call back into the Workbench - that is the "
+                 "model reaching the operator routes through a tool. The builtin "
+                 "tools are the model's way to the Workbench.",
+        )
 
     # Body for verbs that take one
     body_json: Optional[str] = None
@@ -89,6 +148,16 @@ async def invoke_web(
     if invoke.headers:
         for hname, hvalue in invoke.headers.items():
             headers[hname] = substitute_scalar(str(hvalue), args)
+    # The file's credential, resolved NOW rather than at load: nothing holds
+    # the secret between calls, and rotating the env var takes effect on
+    # the next call. A tool that sets its own Authorization header keeps it.
+    if file_config is not None and file_config.has_bearer and not _has_header(headers, "Authorization"):
+        from seren_meninges.credentials import resolve_token
+        token = resolve_token(inline=file_config.bearer_token or None,
+                              keyring_ref=file_config.bearer_token_keyring or None,
+                              env_var=file_config.bearer_token_env or None)
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
 
     # Make the call
     try:

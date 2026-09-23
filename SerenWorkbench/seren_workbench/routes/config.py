@@ -29,14 +29,19 @@ async def get_config(request: Request):
     mcp_cfg = getattr(request.app.state, "mcp_config", None)
     tool_overrides = mcp_cfg.snapshot() if mcp_cfg else {}
 
-    server = asdict(cfg.server)
-    if "bearer_token" in server:
-        server["bearer_token"] = _mask(server["bearer_token"])
-
     return {
-        "server": server,
+        "server": _masked(asdict(cfg.server)),
         "tls": asdict(cfg.tls),
         "dashboard": asdict(cfg.dashboard),
-        "services": asdict(cfg.services),
+        # The services block carries OUTBOUND token literals now (what we
+        # present to Memory / Lodestar); same rule, same mask.
+        "services": _masked(asdict(cfg.services)),
         "tool_overrides": tool_overrides,
     }
+
+
+def _masked(block: dict) -> dict:
+    """Every key that IS a secret (ends in `bearer_token`) is masked. The
+    `_env` and `_keyring` keys are pointers and stay readable - knowing
+    which env var holds the token is not knowing the token."""
+    return {k: (_mask(v) if k.endswith("bearer_token") else v) for k, v in block.items()}

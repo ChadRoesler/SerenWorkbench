@@ -85,9 +85,13 @@ class ProposalStore:
         proposals_dir: str,
         tools_dir: str,
         live_names: Optional[Any] = None,
+        self_addr: Optional[tuple[str, int]] = None,
     ) -> None:
         self._dir = Path(proposals_dir)
         self._tools_dir = Path(tools_dir)
+        # This Workbench's own (host, port). A proposed web tool that points
+        # here is refused before a reviewer ever sees it - see _validate.
+        self._self_addr = self_addr
         # A CALLABLE, not a snapshot. The live tool set changes underneath a
         # proposal that's sitting in review - a reload can add the very name
         # being proposed - so the collision check has to ask at the moment it
@@ -212,6 +216,17 @@ class ProposalStore:
                 raise ProposalError(f"tool '{entry.name}' is process but has no argv.")
             if kind == "web" and not entry.invoke.path:
                 raise ProposalError(f"tool '{entry.name}' is web but has no path.")
+            if kind == "web" and self._self_addr is not None:
+                base = entry.invoke.base_url or (mf.configuration.base_url if mf.configuration else "") or ""
+                from .dynamic_tools.web_dispatcher import targets_this_workbench
+                if base and targets_this_workbench(base.rstrip("/") + "/" + entry.invoke.path.lstrip("/"),
+                                                   *self._self_addr):
+                    raise ProposalError(
+                        f"tool '{entry.name}' points at this Workbench itself. A tool "
+                        "can't call back into the surface that runs it - the approval "
+                        "routes stay operator-only. The builtin tools are how you reach "
+                        "the Workbench."
+                    )
             if not entry.description or not entry.description.strip():
                 raise ProposalError(
                     f"tool '{entry.name}' needs a description - it's what a "
@@ -219,12 +234,12 @@ class ProposalStore:
                 )
 
             names.append(entry.name)
-            effects.append(self._describe_effect(entry, kind))
+            effects.append(self._describe_effect(entry, kind, mf.configuration))
 
         return names, effects
 
     @staticmethod
-    def _describe_effect(entry, kind: str) -> Dict[str, Any]:
+    def _describe_effect(entry, kind: str, file_config=None) -> Dict[str, Any]:
         """The blunt summary a reviewer actually needs.
 
         Spelling out the argv or the URL means the reviewer sees what would
@@ -243,6 +258,16 @@ class ProposalStore:
             base = entry.invoke.base_url or "(from manifest configuration)"
             eff["calls"] = f"{(entry.invoke.method or 'GET').upper()} {base}{entry.invoke.path}"
             eff["executes_a_binary"] = False
+        # A credential pointer is the one thing a reviewer must not miss: a
+        # web tool that sends env:SOME_SECRET to a host of the proposer's
+        # choosing is exfiltration with a friendly description. Named here,
+        # never valued.
+        if file_config is not None and file_config.has_bearer:
+            eff["sends_credential"] = file_config.credential_label()
+            eff["review_note"] = (eff.get("review_note", "") + " " if eff.get("review_note") else "") + (
+                "This tool sends a bearer token from this box's environment to the host "
+                "above. Check that the host deserves it."
+            )
         params = entry.parameters or []
         eff["parameters"] = [
             {

@@ -11,16 +11,29 @@ CALL TIME to decide whether a tool may run (registration happens once at
 startup, so the toggle gate lives in the call path, not the tool list).
 
 Startup enable state is seeded from DashboardConfig:
-  - tools_disabled entries start disabled (survives restarts, unlike the
-    in-memory toggles).
+  - tools_disabled entries start disabled.
   - tools_enabled non-empty = allowlist: everything NOT named starts disabled.
+
+And then REMEMBERED. Every toggle the dashboard makes, and every proposal
+approved-but-left-off, is written to a small state file and read back at
+the next start. Before that file existed the dashboard's toggles were
+in-memory only: reboot the Jetson and the tool you deliberately switched
+off was live again, which is the opposite of what a switch is for. A name
+the yaml lists explicitly is the operator's written word and beats the
+file; everything else is whatever the dashboard last said.
 """
 from __future__ import annotations
 
+import json
+import logging
 import os
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+
+log = logging.getLogger(__name__)
+STATE_FORMAT = 1
 
 from .tool_config.mcp_config import McpConfig
 
@@ -72,7 +85,10 @@ class ToolRegistry:
 
     def __init__(self, builtin_tools: list[ToolInfo],
                  dynamic_tools: list[ToolInfo],
-                 start_disabled: Optional[set[str]] = None) -> None:
+                 start_disabled: Optional[set[str]] = None,
+                 state_path: Optional[str] = None,
+                 pinned: Optional[set[str]] = None,
+                 named: Optional[set[str]] = None) -> None:
         self._builtin = builtin_tools
         self._dynamic = dynamic_tools
         # name -> enabled state
@@ -83,11 +99,97 @@ class ToolRegistry:
         # startup did — otherwise a tool named in tools_disabled would come
         # back enabled the first time someone hit reload.
         self._start_disabled: set[str] = set(start_disabled or ())
+        # Names the yaml spoke for. The file never overrides these. `named`
+        # is the subset the yaml LITERALLY lists (not the ones an allowlist
+        # implies), which is the only set worth a conflict warning.
+        self._pinned: set[str] = set(pinned or ())
+        self._named: set[str] = set(named if named is not None else self._pinned)
+        # Where toggles are remembered between restarts. None = in-memory
+        # only (bare registries in tests). The file is read once here and
+        # written on every change; a write that fails leaves the toggle in
+        # force for this process and says so in persist_error.
+        self._state_path = state_path
+        self.persist_error: str = ""
+        self._persisted_tools: dict[str, bool] = {}
+        self._persisted_actions: dict[str, bool] = {}
+        self._load_state()
 
         for t in builtin_tools + dynamic_tools:
-            self._enabled[t.name] = t.name not in self._start_disabled
+            self._enabled[t.name] = self._initial_state(t.name)
             for a in t.actions:
-                self._action_enabled[f"{t.name}.{a['name']}"] = True
+                key = f"{t.name}.{a['name']}"
+                self._action_enabled[key] = self._persisted_actions.get(key, True)
+
+    # ── Remembering toggles ────────────────────────────────────────────
+
+    @property
+    def state_path(self) -> Optional[str]:
+        return self._state_path
+
+    @property
+    def persisted(self) -> bool:
+        """True when the last change was written down somewhere it will be
+        read back from. False for an in-memory registry or after a failed
+        write - the route reports it so a toggle that will not survive a
+        restart is never mistaken for one that will."""
+        return bool(self._state_path) and not self.persist_error
+
+    def _initial_state(self, name: str) -> bool:
+        """yaml first, then the remembered toggle, then on."""
+        if name in self._pinned:
+            return name not in self._start_disabled
+        if name in self._persisted_tools:
+            return self._persisted_tools[name]
+        return name not in self._start_disabled
+
+    def _load_state(self) -> None:
+        if not self._state_path or not os.path.isfile(self._state_path):
+            return
+        try:
+            with open(self._state_path, encoding="utf-8") as f:
+                raw = json.load(f)
+            tools = raw.get("tools") if isinstance(raw, dict) else None
+            actions = raw.get("actions") if isinstance(raw, dict) else None
+            self._persisted_tools = {str(k): bool(v) for k, v in (tools or {}).items()}
+            self._persisted_actions = {str(k): bool(v) for k, v in (actions or {}).items()}
+        except Exception as exc:  # noqa: BLE001 - a bad file must not stop boot
+            log.warning("tool state file %s unreadable (%s); starting from the yaml",
+                        self._state_path, exc)
+            return
+        clashes = sorted(
+            name for name, remembered in self._persisted_tools.items()
+            if name in self._named and remembered != (name not in self._start_disabled)
+        )
+        if clashes:
+            log.warning("the yaml and the dashboard's remembered state disagree about %s; "
+                        "the yaml wins - drop a name from tools_enabled/tools_disabled to "
+                        "let the dashboard decide it", ", ".join(clashes))
+
+    def _persist(self) -> None:
+        """Write the remembered toggles. Only DELIBERATE ones are in the file:
+        a dashboard click, or a proposal approved and left off. Tools that
+        merely took their default are not written, so the file is a record
+        of decisions, not a dump - and a conflict with the yaml is always
+        about something a person actually chose. Atomic (tmp + replace) so
+        a crash mid-write leaves the previous file, not half of one."""
+        if not self._state_path:
+            return
+        payload = {"format": STATE_FORMAT, "saved_at": time.time(),
+                   "tools": dict(self._persisted_tools),
+                   "actions": dict(self._persisted_actions)}
+        try:
+            parent = os.path.dirname(self._state_path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            tmp = self._state_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2, sort_keys=True)
+            os.replace(tmp, self._state_path)
+            self.persist_error = ""
+        except OSError as exc:
+            self.persist_error = f"{exc}"
+            log.warning("could not write tool state to %s: %s - the toggle holds "
+                        "until restart", self._state_path, exc)
 
     def builtin_names(self) -> set[str]:
         """Names owned by builtin tools — the set a manifest must never take."""
@@ -107,6 +209,10 @@ class ToolRegistry:
         undone by the next reload.
         """
         self._start_disabled |= set(names)
+        # A deliberate decision, so it is remembered: the tool must still be
+        # off after a restart, not just until one.
+        for name in names:
+            self._persisted_tools[name] = False
 
     def dynamic_tools(self) -> list[ToolInfo]:
         return list(self._dynamic)
@@ -130,11 +236,13 @@ class ToolRegistry:
 
         for t in new_dynamic:
             if t.name not in self._enabled:          # new since last load
-                self._enabled[t.name] = t.name not in self._start_disabled
+                self._enabled[t.name] = self._initial_state(t.name)
             for a in t.actions:
-                self._action_enabled.setdefault(f"{t.name}.{a['name']}", True)
+                key = f"{t.name}.{a['name']}"
+                self._action_enabled.setdefault(key, self._persisted_actions.get(key, True))
 
         self._dynamic = new_dynamic
+        self._persist()
 
     def all_tools(self) -> list[ToolInfo]:
         """Return combined list, with current enabled states applied."""
@@ -163,12 +271,16 @@ class ToolRegistry:
         if name not in self._enabled:
             return False
         self._enabled[name] = True
+        self._persisted_tools[name] = True
+        self._persist()
         return True
 
     def disable_tool(self, name: str) -> bool:
         if name not in self._enabled:
             return False
         self._enabled[name] = False
+        self._persisted_tools[name] = False
+        self._persist()
         return True
 
     def enable_action(self, tool_name: str, action: str) -> bool:
@@ -176,6 +288,8 @@ class ToolRegistry:
         if key not in self._action_enabled:
             return False
         self._action_enabled[key] = True
+        self._persisted_actions[key] = True
+        self._persist()
         return True
 
     def disable_action(self, tool_name: str, action: str) -> bool:
@@ -183,6 +297,8 @@ class ToolRegistry:
         if key not in self._action_enabled:
             return False
         self._action_enabled[key] = False
+        self._persisted_actions[key] = False
+        self._persist()
         return True
 
     def snapshot(self) -> dict:
@@ -317,10 +433,11 @@ def _extract_params(schema: dict) -> list[dict]:
 
 def build_registry(
     mcp_config: Optional[McpConfig] = None,
-    tools_dir: str = "/opt/seren/tools",
+    tools_dir: str = "",
     tools_enabled: Optional[list[str]] = None,
     tools_disabled: Optional[list[str]] = None,
     exclude: Optional[set[str]] = None,
+    state_path: Optional[str] = None,
 ) -> ToolRegistry:
     """Factory: gather builtin + dynamic tools, return a populated registry.
 
@@ -328,13 +445,15 @@ def build_registry(
         mcp_config:     optional McpConfig for tool-level knob overrides
                         (reserved — knobs are injected per-call via DI).
         tools_dir:      path to the YAML manifest directory for dynamic tools.
-                        Defaults to /opt/seren/tools — empty if absent.
+                        Empty or absent = no dynamic tools.
         tools_enabled:  allowlist from DashboardConfig — if non-empty, every
                         tool NOT named here starts disabled.
         tools_disabled: denylist from DashboardConfig — these start disabled.
+        state_path:     where the dashboard's toggles are remembered between
+                        restarts. None = this registry forgets on exit.
     """
     builtin = _builtin_tool_info()
-    dynamic = _dynamic_tool_info(tools_dir, mcp_config)
+    dynamic = _dynamic_tool_info(tools_dir, mcp_config) if tools_dir else []
 
     # A feature switched off should be ABSENT, not present-and-erroring. A
     # tool that lists in the schema and then reports "not enabled" on every
@@ -346,10 +465,16 @@ def build_registry(
 
     all_names = {t.name for t in builtin} | {t.name for t in dynamic}
     start_disabled: set[str] = set(tools_disabled or [])
+    # What the yaml said in so many words. With an allowlist every name is
+    # spoken for (in it or not); otherwise only the denylist is.
+    pinned: set[str] = set(tools_disabled or [])
     if tools_enabled:
         start_disabled |= all_names - set(tools_enabled)
+        pinned |= all_names
 
-    return ToolRegistry(builtin, dynamic, start_disabled=start_disabled)
+    return ToolRegistry(builtin, dynamic, start_disabled=start_disabled,
+                        state_path=state_path, pinned=pinned,
+                        named=set(tools_disabled or []) | set(tools_enabled or []))
 
 
 def _dynamic_tool_info(tools_dir: str,
@@ -362,7 +487,7 @@ def _dynamic_tool_info(tools_dir: str,
     entry + owning manifest so the MCP layer can build its dispatcher.
     """
     # Short-circuit if the directory doesn't exist
-    if not os.path.isdir(tools_dir):
+    if not tools_dir or not os.path.isdir(tools_dir):
         return []
 
     from .dynamic_tools.manifest_loader import ManifestLoader

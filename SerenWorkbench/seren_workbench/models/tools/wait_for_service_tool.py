@@ -1,7 +1,7 @@
 # ════════════════════════════════════════════════════════════════════════
 #  WaitForServiceTool - wait for a service to be fully online.
 #
-#  Polls RuntimeHost until the requested service reports 'running' on at
+#  Polls Lodestar until the requested service reports 'running' on at
 #  least one node, or a timeout is reached. This prevents the LLM from
 #  acting before the cluster has settled.
 # ════════════════════════════════════════════════════════════════════════
@@ -25,7 +25,7 @@ TOOLBOX = "Services"
 WAIT_FOR_SERVICE_TOOL_DEF = {
     "name": "wait_for_service",
     "description": (
-        "Polls RuntimeHost until the given service is running on at least "
+        "Polls Lodestar until the given service is running on at least "
         "one node. Returns when the service comes online or after a "
         "timeout (default 30s, configurable per-tool). Use this when the "
         "user says 'start service X' — call wait_for_service afterward to "
