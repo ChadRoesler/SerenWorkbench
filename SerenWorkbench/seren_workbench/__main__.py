@@ -41,6 +41,13 @@ def main():
     if args.host:
         cfg.server.host = args.host
 
+    # AFTER the CLI overrides and BEFORE the app: Workbench is the surface a
+    # model reaches through, and an open bind with no token hands that
+    # surface to the LAN. Refused here, with the three ways out printed.
+    from seren_meninges.exposure import enforce_server
+    enforce_server(cfg.server, service="seren-workbench", env_prefix="SEREN_WORKBENCH",
+                   log=lambda m: print(m, file=sys.stderr))
+
     app = create_app(cfg)
 
     import uvicorn
