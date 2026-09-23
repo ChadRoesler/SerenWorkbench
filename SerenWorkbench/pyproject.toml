@@ -45,7 +45,7 @@ dependencies = [
     # So: cap it, don't hope. Lift the cap in the same commit that ports
     # server.py to the MCPServer API — across the whole family at once, since
     # they're deliberate copies of each other.
-    "mcp>=1.3.0,<2",
+    "mcp>=1.3.0,<3",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
     "httpx>=0.28",
