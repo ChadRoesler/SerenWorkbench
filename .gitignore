@@ -445,3 +445,16 @@ dist/
 # Makefile test venvs (belt-and-suspenders; the targets also delete them)
 .venv*/
 venv/
+
+SerenWorkbench/build/
+SerenWorkbench/dist/
+
+# -- Python ------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+*.whl
