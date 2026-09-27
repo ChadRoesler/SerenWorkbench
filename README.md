@@ -44,4 +44,4 @@ pytest -q
 
 ## License
 
-GPL-3.0-or-later. See [LICENSE](LICENSE).
+AGPL-3.0-or-later. See [LICENSE](LICENSE).
