@@ -184,11 +184,9 @@ the tool counts:
 }
 ```
 
-Opt-in, because a box that never leaves the LAN has no business calling PyPI:
-
-```bash
-pip install 'seren-workbench[updates]'
-```
+On by default: update checking is part of the core install (it lives in
+`seren-meninges`). A box that never leaves the LAN has no business calling
+PyPI; set `enabled: false` there. The knobs:
 
 ```yaml
 updates:
@@ -199,8 +197,9 @@ updates:
 
 The result is cached and the check never happens in the request path, so `/`
 stays fast. `updates.status` is always one of `ok`, `disabled`, `unavailable`
-(the extra isn't installed) or `error` — **never absent, and never a silent
-"you're fine" when it couldn't actually check.**
+(a broken install: the checker's dependencies are missing) or `error`
+— **never absent, and never a silent "you're fine" when it couldn't actually
+check.**
 `SEREN_WORKBENCH_UPDATES_ENABLED=false` turns it off without editing config.
 
 **The Workbench never upgrades itself.** Applying an update is `pip install -U

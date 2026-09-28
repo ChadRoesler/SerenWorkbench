@@ -91,9 +91,10 @@ dashboard:
 # Applying an update is `pip install -U seren-workbench` plus a service
 # restart, which is your supervisor's job (NSSM, systemd), not this process's.
 #
-# Needs the extra:  pip install 'seren-workbench[updates]'
-# Without it, GET / reports status="unavailable" and says why - it does NOT
-# quietly report that you're up to date.
+# Checking is part of the core install (SerenMeninges 2.x) and on by default;
+# updates.enabled: false or SEREN_WORKBENCH_UPDATES_ENABLED=false turns it off.
+# A checker that could not look reports status="unavailable" and says why - it
+# does NOT quietly report that you're up to date.
 updates:
   enabled: true
   check_interval_hours: 6      # cached; never checked per-request

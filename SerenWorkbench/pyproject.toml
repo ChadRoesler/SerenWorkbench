@@ -19,7 +19,7 @@ dynamic = ["version"]
 description = "MCP server for the Seren stack — the tool surface LLMs reach through."
 readme = "README.md"
 license = { text = "AGPL-3.0-or-later" }
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.10"
 authors = [
     { name = "Chad Roesler" },
 ]
