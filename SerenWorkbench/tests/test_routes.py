@@ -4,7 +4,9 @@ Route tests — the HTTP surface via TestClient.
 Covers the info endpoints, tools, state toggles, config, logs, and the viewer.
 Auth tests live in test_auth.py.
 
-Counts assert >= 24: the full builtin surface. (The old >= 16 was written to
+Counts assert >= 13: the full builtin surface (it was 24 until 6 Oct 2026, when the
+memory, consolidator, scheduler and service-control builtins went: those are the
+standard components' own tools now, passed through - see upstream.py). (The old >= 16 was written to
 the endswith-discovery bug that silently dropped 8 bare-TOOL_DEFINITION tools.)
 """
 from __future__ import annotations
@@ -23,8 +25,8 @@ def test_root_reports_service_and_counts(client):
     body = client.get("/").json()
     assert body["service"] == "SerenWorkbench"
     assert body["version"]
-    assert body["tools_count"] >= 24
-    assert body["builtin_count"] >= 24
+    assert body["tools_count"] >= 13
+    assert body["builtin_count"] >= 13
     assert body["dynamic_count"] == 0  # no YAML manifests in CI
 
 
@@ -32,7 +34,7 @@ def test_root_reports_service_and_counts(client):
 
 def test_list_tools_returns_schemas(client):
     body = client.get("/tools").json()
-    assert body["count"] >= 24
+    assert body["count"] >= 13
     for t in body["tools"]:
         assert "name" in t
         assert "description" in t
@@ -82,14 +84,14 @@ def test_disable_tool(client):
 
 def test_enable_tool(client):
     # First disable, then re-enable
-    client.post("/tools/state", json={"tool": "recall", "enabled": False})
-    r = client.post("/tools/state", json={"tool": "recall", "enabled": True})
+    client.post("/tools/state", json={"tool": "search_the_web", "enabled": False})
+    r = client.post("/tools/state", json={"tool": "search_the_web", "enabled": True})
     assert r.status_code == 200
     assert r.json()["enabled"] is True
 
     snap = client.get("/tools/state").json()
     for t in snap["tools"]:
-        if t["name"] == "recall":
+        if t["name"] == "search_the_web":
             assert t["enabled"] is True
             break
 

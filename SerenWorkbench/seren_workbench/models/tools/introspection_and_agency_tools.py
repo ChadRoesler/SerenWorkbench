@@ -1,7 +1,9 @@
 # ════════════════════════════════════════════════════════════════════════
 #  IntrospectionAndAgencyTools - Wave 1 small enablers.
 #
-#  TimeSinceLastMessage, PreserveMemoryVerbatim, PromoteMemoryNow.
+#  TimeSinceLastMessage. (PreserveMemoryVerbatim and PromoteMemoryNow lived
+#  here until 6 Oct 2026; they are Memory's own tools, passed through with
+#  the rest of that component - see seren_workbench/upstream.py.)
 # ════════════════════════════════════════════════════════════════════════
 
 from __future__ import annotations
@@ -13,10 +15,8 @@ from typing import Optional
 import httpx
 
 
-# This module is the one place a MODULE-level TOOLBOX won't do: its three
-# tools belong in two different boxes. Reading the temporal posture of a
-# conversation is a self-awareness thing; pinning and promoting entries are
-# memory things. So each declares its own, which beats the module default.
+# Declares its own toolbox: reading the temporal posture of a conversation
+# is a self-awareness thing.
 
 # TimeSinceLastMessage
 TIME_TOOL_DEF = {
@@ -36,48 +36,6 @@ TIME_TOOL_DEF = {
     },
 }
 
-# PreserveMemoryVerbatim
-PRESERVE_TOOL_DEF = {
-    "name": "preserve_memory_verbatim",
-    "toolbox": "Memory",
-    "description": (
-        "Mark a short-term memory entry for VERBATIM promotion on the "
-        "next consolidator cycle - no summarization, no fusion with "
-        "other entries. Requires the entry ID returned by Remember() or recall(). "
-        "Returns JSON: {ok, id, verbatim:true, pinned:true}."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "entry_id": {
-                "type": "string",
-                "description": "The short-term entry ID, as returned by Remember() or recall().",
-            },
-        },
-        "required": ["entry_id"],
-    },
-}
-
-# PromoteMemoryNow
-PROMOTE_TOOL_DEF = {
-    "name": "promote_memory_now",
-    "toolbox": "Memory",
-    "description": (
-        "Promote a short-term memory to durable long-term IMMEDIATELY, "
-        "without waiting for the consolidator's next cycle. Requires the entry ID "
-        "from Remember() or recall(). Returns JSON: {ok, long_term_id, removed_short_id}."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "entry_id": {
-                "type": "string",
-                "description": "The short-term entry ID to promote immediately.",
-            },
-        },
-        "required": ["entry_id"],
-    },
-}
 
 
 async def time_since_last_message(
@@ -123,62 +81,6 @@ async def time_since_last_message(
         return _err(f"Lodestar unreachable: {ex}", "Check Lodestar is running.")
     except httpx.TimeoutException:
         return _err("Lodestar timed out.", "Try again.")
-
-
-async def preserve_memory_verbatim(
-    entry_id: str,
-    memory: httpx.AsyncClient = None,
-    **kwargs,
-) -> str:
-    if not entry_id:
-        return _err("Empty entry_id.", "Provide the ID from a Remember() or recall() result.")
-
-    from urllib.parse import quote
-    path = f"/short/{quote(entry_id.strip())}/preserve"
-
-    try:
-        resp = await memory.post(path, content=None)
-        if resp.status_code == 404:
-            return _err(f"Short-term entry '{entry_id}' not found.", "May have aged out.")
-        if not resp.is_success:
-            body = resp.text
-            return _err(f"SerenMemory returned HTTP {resp.status_code}.", body[:500] + "…")
-
-        print(f"[mcp-audit] PreserveMemoryVerbatim: id={entry_id}", file=sys.stderr)
-        return resp.text
-
-    except httpx.RequestError as ex:
-        return _err(f"SerenMemory unreachable: {ex}", "Check seren-memory.service is running.")
-    except httpx.TimeoutException:
-        return _err("Preserve request timed out.", "Try again.")
-
-
-async def promote_memory_now(
-    entry_id: str,
-    memory: httpx.AsyncClient = None,
-    **kwargs,
-) -> str:
-    if not entry_id:
-        return _err("Empty entry_id.", "Provide the ID from a Remember() or recall() result.")
-
-    from urllib.parse import quote
-    path = f"/short/{quote(entry_id.strip())}/promote"
-
-    try:
-        resp = await memory.post(path, content=None)
-        if resp.status_code == 404:
-            return _err(f"Short-term entry '{entry_id}' not found.", "May have aged out.")
-        if not resp.is_success:
-            body = resp.text
-            return _err(f"SerenMemory returned HTTP {resp.status_code}.", body[:500] + "…")
-
-        print(f"[mcp-audit] PromoteMemoryNow: id={entry_id}", file=sys.stderr)
-        return resp.text
-
-    except httpx.RequestError as ex:
-        return _err(f"SerenMemory unreachable: {ex}", "Check seren-memory.service is running.")
-    except httpx.TimeoutException:
-        return _err("Promote request timed out.", "Try again.")
 
 
 def _err(error: str, hint: str) -> str:

@@ -18,8 +18,8 @@ def test_root_and_health(client):
     root = client.get("/").json()
     assert root["service"] == "SerenWorkbench"
     assert "version" in root
-    assert root["tools_count"] >= 24
-    assert root["builtin_count"] >= 24
+    assert root["tools_count"] >= 13
+    assert root["builtin_count"] >= 13
     assert root["dynamic_count"] == 0  # no YAML manifests on disk
 
 
@@ -27,13 +27,13 @@ def test_tools_endpoint(client):
     r = client.get("/tools")
     assert r.status_code == 200
     data = r.json()
-    assert data["count"] >= 24
+    assert data["count"] >= 13
     tools = data["tools"]
     # Spot-check a few well-known tools
     names = {t["name"] for t in tools}
-    assert "remember" in names
-    assert "recall" in names
-    assert "forget" in names
+    assert "get_current_time" in names
+    assert "search_the_web" in names
+    assert "which_model" in names
     assert "fetch_url" in names
     assert "search_the_web" in names
     # And a few from the recovered-discovery set
@@ -50,8 +50,8 @@ def test_tools_endpoint(client):
 
 def test_tool_state_toggle(client):
     """Enable/disable cycle for a tool."""
-    # Disable 'remember'
-    r = client.post("/tools/state", json={"tool": "remember", "enabled": False})
+    # Disable 'get_current_time'
+    r = client.post("/tools/state", json={"tool": "get_current_time", "enabled": False})
     assert r.status_code == 200
     assert r.json()["ok"] is True
     assert r.json()["enabled"] is False
@@ -59,21 +59,21 @@ def test_tool_state_toggle(client):
     # Snapshot should reflect the change
     snap = client.get("/tools/state").json()
     for t in snap["tools"]:
-        if t["name"] == "remember":
+        if t["name"] == "get_current_time":
             assert t["enabled"] is False
             break
     else:
-        pytest.fail("remember not in snapshot")
+        pytest.fail("get_current_time not in snapshot")
 
     # Re-enable
-    r = client.post("/tools/state", json={"tool": "remember", "enabled": True})
+    r = client.post("/tools/state", json={"tool": "get_current_time", "enabled": True})
     assert r.status_code == 200
     assert r.json()["enabled"] is True
 
     # Verify the snapshot updated
     snap = client.get("/tools/state").json()
     for t in snap["tools"]:
-        if t["name"] == "remember":
+        if t["name"] == "get_current_time":
             assert t["enabled"] is True
             break
 

@@ -92,7 +92,7 @@ def test_a_tool_switched_off_is_still_off_after_a_restart(tmp_path, make_client)
     c2 = make_client(_cfg(tools))          # "the Jetson rebooted"
     by_name = {t["name"]: t for t in c2.get("/tools").json()["tools"]}
     assert by_name["fetch_url"]["enabled"] is False
-    assert by_name["recall"]["enabled"] is True, "only the deliberate toggle is remembered"
+    assert by_name["search_the_web"]["enabled"] is True, "only the deliberate toggle is remembered"
 
 
 def test_an_approved_but_disabled_proposal_is_still_disabled_after_a_restart(tmp_path, make_client):
@@ -122,19 +122,19 @@ def test_the_yaml_lists_beat_the_remembered_toggle(tmp_path, make_client):
     tools = tmp_path / "tools"; tools.mkdir()
     c1 = make_client(_cfg(tools))
     c1.post("/tools/state", json={"tool": "fetch_url", "enabled": False})
-    c1.post("/tools/state", json={"tool": "recall", "enabled": False})
+    c1.post("/tools/state", json={"tool": "search_the_web", "enabled": False})
     c1.__exit__(None, None, None)
 
-    c2 = make_client(_cfg(tools, tools_disabled=["remember"], tools_enabled=[]))
+    c2 = make_client(_cfg(tools, tools_disabled=["get_current_time"], tools_enabled=[]))
     by_name = {t["name"]: t for t in c2.get("/tools").json()["tools"]}
-    assert by_name["remember"]["enabled"] is False        # yaml
+    assert by_name["get_current_time"]["enabled"] is False        # yaml
     assert by_name["fetch_url"]["enabled"] is False       # remembered
     c2.__exit__(None, None, None)
 
     c3 = make_client(_cfg(tools, tools_enabled=["fetch_url"]))
     by_name = {t["name"]: t for t in c3.get("/tools").json()["tools"]}
     assert by_name["fetch_url"]["enabled"] is True, "an allowlist is the whole answer"
-    assert by_name["recall"]["enabled"] is False
+    assert by_name["search_the_web"]["enabled"] is False
 
 
 def test_a_state_file_that_cannot_be_written_is_reported_not_hidden(tmp_path, make_client):

@@ -91,6 +91,9 @@ class ToolRegistry:
                  named: Optional[set[str]] = None) -> None:
         self._builtin = builtin_tools
         self._dynamic = dynamic_tools
+        # Tools passed through from the standard components (upstream.py).
+        # They arrive after startup and change when a component is refreshed.
+        self._upstream: list[ToolInfo] = []
         # name -> enabled state
         self._enabled: dict[str, bool] = {}
         # "name.action" -> enabled state for sub-actions
@@ -109,6 +112,11 @@ class ToolRegistry:
         # written on every change; a write that fails leaves the toggle in
         # force for this process and says so in persist_error.
         self._state_path = state_path
+        # Called (no arguments) after anything that can change which tools a
+        # client is offered: a switch flipped, the manifest tools reloaded,
+        # the passed-through tools replaced. The MCP layer points it at its
+        # ToolListWatch; None for a bare registry.
+        self.on_change: Optional[Any] = None
         self.persist_error: str = ""
         self._persisted_tools: dict[str, bool] = {}
         self._persisted_actions: dict[str, bool] = {}
@@ -191,6 +199,15 @@ class ToolRegistry:
             log.warning("could not write tool state to %s: %s - the toggle holds "
                         "until restart", self._state_path, exc)
 
+    def _changed(self) -> None:
+        hook = self.on_change
+        if hook is None:
+            return
+        try:
+            hook()
+        except Exception as exc:  # noqa: BLE001 - telling a client never fails a toggle
+            log.info("tool-list change hook failed: %r", exc)
+
     def builtin_names(self) -> set[str]:
         """Names owned by builtin tools — the set a manifest must never take."""
         return {t.name for t in self._builtin}
@@ -243,11 +260,44 @@ class ToolRegistry:
 
         self._dynamic = new_dynamic
         self._persist()
+        self._changed()
+
+    def has_state(self, name: str) -> bool:
+        """Has this tool been seen, or decided about, before? True for a tool
+        the registry holds now and for one a person toggled in an earlier
+        run. What a 'starts switched off' rule asks before applying itself:
+        it speaks only for a tool nobody has had a say on yet."""
+        return name in self._enabled or name in self._persisted_tools
+
+    def replace_upstream(self, new_upstream: list[ToolInfo]) -> None:
+        """Swap the passed-through tool set, PRESERVING operator toggles -
+        the same rule as replace_dynamic: a refresh says what a component
+        offers, not what is permitted to run. A tool keeps the state it had;
+        one seen for the first time takes the yaml's word, then the
+        remembered toggle, then on."""
+        surviving = {t.name for t in new_upstream}
+        mine = {t.name for t in self._builtin + self._dynamic}
+        for name in {t.name for t in self._upstream} - surviving - mine:
+            self._enabled.pop(name, None)
+        for t in new_upstream:
+            if t.name not in self._enabled:
+                self._enabled[t.name] = self._initial_state(t.name)
+        self._upstream = new_upstream
+        self._changed()
+
+    def upstream_tools(self) -> list[ToolInfo]:
+        return list(self._upstream)
+
+    def _listed(self) -> list[ToolInfo]:
+        """Every tool, once: a passed-through tool replaces a builtin or a
+        manifest tool of the same name (the service's own word wins)."""
+        taken = {t.name for t in self._upstream}
+        return [t for t in self._builtin + self._dynamic if t.name not in taken] + self._upstream
 
     def all_tools(self) -> list[ToolInfo]:
         """Return combined list, with current enabled states applied."""
         result = []
-        for t in self._builtin + self._dynamic:
+        for t in self._listed():
             t.enabled = self._enabled.get(t.name, True)
             for a in t.actions:
                 key = f"{t.name}.{a['name']}"
@@ -256,7 +306,7 @@ class ToolRegistry:
         return result
 
     def get_tool(self, name: str) -> Optional[ToolInfo]:
-        for t in self._builtin + self._dynamic:
+        for t in self._upstream + self._builtin + self._dynamic:
             if t.name == name:
                 return t
         return None
@@ -273,6 +323,7 @@ class ToolRegistry:
         self._enabled[name] = True
         self._persisted_tools[name] = True
         self._persist()
+        self._changed()
         return True
 
     def disable_tool(self, name: str) -> bool:
@@ -281,6 +332,7 @@ class ToolRegistry:
         self._enabled[name] = False
         self._persisted_tools[name] = False
         self._persist()
+        self._changed()
         return True
 
     def enable_action(self, tool_name: str, action: str) -> bool:
@@ -320,7 +372,7 @@ class ToolRegistry:
                     }
                     for a in t.actions
                 ],
-            } for t in self._builtin + self._dynamic],
+            } for t in self._listed()],
         }
 
 

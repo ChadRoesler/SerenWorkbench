@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from collections import deque
 from dataclasses import dataclass, field
 from typing import List, Optional
@@ -40,6 +41,9 @@ class ToolAuditLog:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._entries: deque[AuditEntry] = deque()
+        # When this record began: it is in memory, so "nothing here" means
+        # "nothing since then", and a reader needs to know when then was.
+        self.started_at: float = time.time()
 
     def record(self, entry: AuditEntry) -> None:
         with self._lock:

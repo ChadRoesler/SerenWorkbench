@@ -100,6 +100,14 @@ class DashboardConfig:
     def resolve_state_file(self) -> str:
         return self.state_file or os.path.join(self.tools_dir, STATE_FILE_NAME)
 
+    def resolve_plugins_dir(self) -> str:
+        """Where an APPROVED plugin proposal is installed: one small yaml per
+        plugin. A subdirectory of tools_dir for the reason proposals_dir is -
+        the manifest loader does not look in subdirectories, so nothing in
+        here is ever mistaken for a tool manifest - and so that it is part of
+        the same snapshot as the tools."""
+        return os.path.join(self.tools_dir, "plugins")
+
     @classmethod
     def from_dict(cls, d: Optional[dict[str, Any]]) -> "DashboardConfig":
         d = d or {}
@@ -117,7 +125,7 @@ class DashboardConfig:
 # The Seren services the builtin tools talk to, by the DI parameter name the
 # tool impls use. SearXNG is not here: it is not a Seren service and speaks
 # no bearer.
-SEREN_SERVICES = ("memory", "runtime_host", "scheduler")
+SEREN_SERVICES = ("memory", "loci", "callosum", "hippocampus", "runtime_host", "scheduler")
 
 
 @dataclass
@@ -144,6 +152,13 @@ class ServicesConfig:
     the per-service ones.
     """
     memory_url: str = "http://127.0.0.1:7420"        # SerenMemory
+    # The rest of the standard system (6 Oct 2026). The Workbench had a
+    # connection for Memory and none for these, so there was no way to reach
+    # a fact, a cross-store search or the sleep cycle through it. Their tools
+    # are passed through from each service's own MCP endpoint: see upstream.py.
+    loci_url: str = "http://127.0.0.1:7422"          # SerenLoci
+    callosum_url: str = "http://127.0.0.1:7423"      # SerenCorpusCallosum
+    hippocampus_url: str = "http://127.0.0.1:7424"   # SerenHippocampus
     runtime_host_url: str = "http://127.0.0.1:6361"  # SerenLodestar (cluster head)
     searxng_url: str = "http://127.0.0.1:8080"       # SearXNG metasearch
     scheduler_url: str = "http://127.0.0.1:6361"     # scheduler surface (Lodestar)
@@ -157,6 +172,15 @@ class ServicesConfig:
     memory_bearer_token: str = field(default="", repr=False)
     memory_bearer_token_env: str = ""
     memory_bearer_token_keyring: str = ""
+    loci_bearer_token: str = field(default="", repr=False)
+    loci_bearer_token_env: str = ""
+    loci_bearer_token_keyring: str = ""
+    callosum_bearer_token: str = field(default="", repr=False)
+    callosum_bearer_token_env: str = ""
+    callosum_bearer_token_keyring: str = ""
+    hippocampus_bearer_token: str = field(default="", repr=False)
+    hippocampus_bearer_token_env: str = ""
+    hippocampus_bearer_token_keyring: str = ""
     runtime_host_bearer_token: str = field(default="", repr=False)
     runtime_host_bearer_token_env: str = ""
     runtime_host_bearer_token_keyring: str = ""
@@ -191,6 +215,9 @@ class ServicesConfig:
         d = d or {}
         out = cls()
         out.memory_url = str(d.get("memory_url", out.memory_url))
+        out.loci_url = str(d.get("loci_url", out.loci_url))
+        out.callosum_url = str(d.get("callosum_url") or d.get("corpus_callosum_url") or out.callosum_url)
+        out.hippocampus_url = str(d.get("hippocampus_url", out.hippocampus_url))
         # `lodestar_url` is the family name for the cluster head; the DI
         # parameter the tools take is still `runtime_host`, so both keys land
         # in the same place and the older one keeps working.
@@ -217,6 +244,168 @@ def _token_keys() -> tuple[str, ...]:
 
 
 _TOKEN_KEYS = _token_keys()
+
+
+@dataclass
+class ComponentsConfig:
+    """Which of the standard components this Workbench passes through
+    (seren_workbench.upstream). All on by default: the standard system is
+    there from the start, and a component that is not running simply offers
+    nothing until it is. A component switched off here contributes no tools
+    at all. Plugins (Probe, Theatre, Margin...) are not listed here - they
+    are manifests in dashboard.tools_dir."""
+    memory: bool = True
+    loci: bool = True
+    corpus_callosum: bool = True
+    hippocampus: bool = True
+    lodestar: bool = True
+
+    def as_dict(self) -> dict[str, bool]:
+        return {"memory": self.memory, "loci": self.loci, "corpus_callosum": self.corpus_callosum,
+                "hippocampus": self.hippocampus, "lodestar": self.lodestar}
+
+    @classmethod
+    def from_dict(cls, d: Optional[dict[str, Any]]) -> "ComponentsConfig":
+        d = d if isinstance(d, dict) else {}
+        out = cls()
+        aliases = {"callosum": "corpus_callosum", "corpuscallosum": "corpus_callosum", "runtime_host": "lodestar"}
+        for key, value in d.items():
+            name = aliases.get(str(key).lower().replace("-", "_"), str(key).lower().replace("-", "_"))
+            if hasattr(out, name) and isinstance(getattr(out, name), bool):
+                setattr(out, name, bool(value) if not isinstance(value, str)
+                        else value.strip().lower() in ("1", "true", "yes", "on"))
+            else:
+                log.warning("components.%s is not a component this Workbench knows; ignoring", key)
+        return out
+
+
+@dataclass
+class PluginConfig:
+    """One MCP plugin: a service that is not part of the standard system and
+    speaks MCP - Margin, Probe, anything of yours. Its own tools are passed
+    through exactly like a component's (seren_workbench.upstream).
+
+    WHY MARGIN IS ONE OF THESE and not a manifest import. Margin publishes a
+    manifest the Workbench can import (`from:` in a tools file), and that path
+    works by calling Margin's HTTP routes - which means turning on Margin's
+    server.http_reads, the switch that keeps a diary from being read over
+    plain HTTP. Over MCP nothing has to be opened: the reads stay where
+    Margin's owner left them, and the diary still comes along."""
+    name: str = ""
+    url: str = ""
+    display: str = ""
+    enabled: bool = True
+    # start_disabled: every tool this plugin offers arrives SWITCHED OFF, and
+    # a person turns on the ones they want from the dashboard. For a server
+    # you are still getting to know, or one that carries something
+    # destructive (a delete, a deploy): plug it in, look at what it has, test
+    # the safe parts, and the rest cannot run until someone says so. A tool
+    # someone has switched on stays on; only tools seen for the first time
+    # arrive off.
+    start_disabled: bool = False
+    bearer_token: str = field(default="", repr=False)
+    bearer_token_env: str = ""
+    bearer_token_keyring: str = ""
+
+    def resolve_bearer(self) -> str:
+        return resolve_token(inline=self.bearer_token or None, keyring_ref=self.bearer_token_keyring or None,
+                             env_var=self.bearer_token_env or None) or ""
+
+    @classmethod
+    def many_from_dir(cls, path: str, taken: Optional[set[str]] = None) -> "list[PluginConfig]":
+        """The plugins an approved proposal installed: every *.yaml in *path*
+        (dashboard.resolve_plugins_dir()), each a `plugins:` mapping like the
+        config's. A name the config already has (*taken*) is the operator's
+        written word and wins. Lenient: a file that does not read is skipped
+        with a line in the log, never a failed start."""
+        out: list[PluginConfig] = []
+        seen = set(taken or ())
+        folder = Path(_expand(path))
+        if not folder.is_dir():
+            return out
+        for f in sorted(folder.glob("*.yaml")):
+            try:
+                raw = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
+            except Exception as ex:  # noqa: BLE001
+                log.warning("could not read plugin file %s: %s; skipping", f, ex)
+                continue
+            for plug in cls.many_from_dict(raw.get("plugins") if isinstance(raw, dict) else None):
+                if plug.name in seen:
+                    log.warning("plugin '%s' in %s is already configured; the config's wins", plug.name, f.name)
+                    continue
+                seen.add(plug.name)
+                out.append(plug)
+        return out
+
+    @classmethod
+    def many_from_dict(cls, d: Optional[dict[str, Any]]) -> "list[PluginConfig]":
+        """`plugins:` is a mapping of name -> {url, bearer_token..., display,
+        enabled}. Lenient: an entry with no url, or a name a standard
+        component already has, is skipped with a line in the log."""
+        out: list[PluginConfig] = []
+        if not isinstance(d, dict):
+            return out
+        reserved = {"memory", "loci", "corpus_callosum", "callosum", "hippocampus", "lodestar"}
+        for raw_name, body in d.items():
+            name = str(raw_name).strip().lower().replace("-", "_").replace(" ", "_")
+            if not isinstance(body, dict) or not str(body.get("url") or "").strip():
+                log.warning("plugins.%s has no url; ignoring", raw_name)
+                continue
+            if name in reserved:
+                log.warning("plugins.%s is the name of a standard component (see components: / services:); ignoring", raw_name)
+                continue
+            enabled = body.get("enabled", True)
+            gated = body.get("start_disabled", False)
+            out.append(cls(
+                name=name, url=str(body["url"]).strip(),
+                display=str(body.get("display") or "") or name.replace("_", " ").title(),
+                enabled=enabled.strip().lower() in ("1", "true", "yes", "on") if isinstance(enabled, str) else bool(enabled),
+                start_disabled=gated.strip().lower() in ("1", "true", "yes", "on") if isinstance(gated, str) else bool(gated),
+                bearer_token=str(body.get("bearer_token") or ""),
+                bearer_token_env=str(body.get("bearer_token_env") or ""),
+                bearer_token_keyring=str(body.get("bearer_token_keyring") or "")))
+        return out
+
+
+@dataclass
+class BackupConfig:
+    """Snapshots of what the Workbench keeps (seren_workbench.keeping): the
+    tool manifests, the approved plugins, the proposals and the switches.
+
+    restore_from / restore_reason are THE RESTORE: a snapshot folder (or its
+    .tar.gz) to put back at startup, and why. Only into an EMPTY tools
+    folder - one that holds anything is never overwritten, and the key is
+    then passed by with a line in the log. There is no route and no tool for
+    this, on purpose: it is these two keys and a restart."""
+    enabled: bool = True
+    dir: str = ""                 # blank = `backups` beside the tools folder
+    every_hours: float = 24.0     # 0 = never on its own
+    keep_daily: int = 14
+    keep_weekly: int = 8
+    restore_from: str = ""
+    restore_reason: str = ""
+
+    @classmethod
+    def from_dict(cls, d: Optional[dict[str, Any]]) -> "BackupConfig":
+        d = d if isinstance(d, dict) else {}
+        out = cls()
+        enabled = d.get("enabled", True)
+        out.enabled = (enabled.strip().lower() in ("1", "true", "yes", "on") if isinstance(enabled, str)
+                       else bool(enabled))
+        out.dir = _expand(d.get("dir") or "")
+        for key, cast in (("every_hours", float), ("keep_daily", int), ("keep_weekly", int)):
+            if d.get(key) is None:
+                continue
+            try:
+                setattr(out, key, max(cast(0), cast(d[key])))
+            except (TypeError, ValueError):
+                log.warning("unparseable backup.%s %r - using %s", key, d[key], getattr(out, key))
+        out.restore_from = _expand(d.get("restore_from") or "")
+        out.restore_reason = str(d.get("restore_reason") or "")
+        for key in d:
+            if key not in cls.__dataclass_fields__:
+                log.warning("backup.%s is not a key this Workbench knows; ignoring", key)
+        return out
 
 
 @dataclass
@@ -258,6 +447,9 @@ class WorkbenchConfig:
     tls: TlsConfig = field(default_factory=TlsConfig)
     dashboard: DashboardConfig = field(default_factory=DashboardConfig)
     services: ServicesConfig = field(default_factory=ServicesConfig)
+    components: "ComponentsConfig" = field(default_factory=lambda: ComponentsConfig())
+    plugins: "list[PluginConfig]" = field(default_factory=list)
+    backup: "BackupConfig" = field(default_factory=lambda: BackupConfig())
     updates: "UpdatesConfig" = field(default_factory=lambda: UpdatesConfig())
     # The yaml file this config was loaded from (None = defaults/env only).
     # Threaded into McpConfig.load() so the server block and the tools block
@@ -289,6 +481,12 @@ def _apply_env_overrides(cfg: WorkbenchConfig) -> WorkbenchConfig:
         cfg.dashboard.state_file = _expand(v)
     if v := env.get("SEREN_WORKBENCH_MEMORY_URL"):
         cfg.services.memory_url = v
+    if v := env.get("SEREN_WORKBENCH_LOCI_URL"):
+        cfg.services.loci_url = v
+    if v := env.get("SEREN_WORKBENCH_CALLOSUM_URL"):
+        cfg.services.callosum_url = v
+    if v := env.get("SEREN_WORKBENCH_HIPPOCAMPUS_URL"):
+        cfg.services.hippocampus_url = v
     if v := env.get("SEREN_WORKBENCH_LODESTAR_URL") or env.get("SEREN_WORKBENCH_RUNTIME_HOST_URL"):
         cfg.services.runtime_host_url = v
     if v := env.get("SEREN_WORKBENCH_SEARXNG_URL"):
@@ -336,9 +534,13 @@ def load_config(path: Optional[str] = None) -> WorkbenchConfig:
     tls = TlsConfig.from_dict(data.get("tls"))
     dashboard = DashboardConfig.from_dict(data.get("dashboard"))
     services = ServicesConfig.from_dict(data.get("services"))
+    components = ComponentsConfig.from_dict(data.get("components"))
+    plugins = PluginConfig.many_from_dict(data.get("plugins"))
     updates = UpdatesConfig.from_dict(data.get("updates"))
+    backup = BackupConfig.from_dict(data.get("backup"))
 
     cfg = WorkbenchConfig(server=server, tls=tls, dashboard=dashboard,
-                          services=services, updates=updates,
+                          services=services, components=components, plugins=plugins, updates=updates,
+                          backup=backup,
                           source_path=source_path)
     return _apply_env_overrides(cfg)

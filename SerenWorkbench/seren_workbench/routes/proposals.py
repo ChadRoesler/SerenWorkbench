@@ -91,6 +91,9 @@ async def approve_proposal(request: Request, pid: str):
     except ProposalError as ex:
         return JSONResponse({"ok": False, "error": str(ex)}, status_code=409)
 
+    if p.kind == "plugin":
+        return await _plug_in(request, store, p)
+
     reload_result = None
     reg = getattr(request.app.state, "dynamic_registry", None)
     registry = getattr(request.app.state, "tool_registry", None)
@@ -125,6 +128,49 @@ async def approve_proposal(request: Request, pid: str):
             "Installed, but the live reloader isn't available — it will appear "
             "(disabled) after a restart."
         ),
+    }
+
+
+async def _plug_in(request: Request, store, p) -> dict:
+    """An approved plugin proposal: read the file that was just installed
+    (the bytes that were reviewed), plug it into the running hub and ask it
+    for its tools. They arrive SWITCHED OFF - the file says start_disabled,
+    and that is the second gate, the same one an approved tool goes through:
+    approving the address and letting a tool run are two decisions."""
+    from ..config import PluginConfig
+
+    hub = getattr(request.app.state, "upstreams", None)
+    path = store.plugin_file(p)
+    name = (p.plugin or {}).get("name")
+    row = None
+    plugged = False
+    if hub is not None and path is not None:
+        plugs = [x for x in PluginConfig.many_from_dir(str(path.parent)) if x.name == name]
+        if plugs and hub.add_plugin(plugs[0]):
+            plugged = True
+            row = next((r for r in await hub.refresh(only=name) if r["component"] == name), None)
+    registry = getattr(request.app.state, "tool_registry", None)
+    count = (row or {}).get("tool_count", 0)
+    if not plugged:
+        next_step = ("Installed. The component hub isn't running, so it will be plugged in "
+                     "(every tool off) at the next start.")
+    elif row and row.get("available"):
+        next_step = (f"Plugged in: {count} tool(s) listed, all switched OFF. Read each one and "
+                     f"enable the ones that may run from the Tool State tab.")
+    else:
+        next_step = (f"Plugged in, and it did not answer ({(row or {}).get('error') or 'no reason given'}). "
+                     "It is asked again every minute; whatever it offers when it does answer arrives "
+                     "switched OFF.")
+    return {
+        "ok": True,
+        "proposal": _public(p),
+        "installed_as": p.installed_as,
+        "installed": True,
+        "plugged_in": plugged,
+        "component": row,
+        "enabled": False,
+        "persisted": bool(getattr(registry, "persisted", False)),
+        "next_step": next_step,
     }
 
 

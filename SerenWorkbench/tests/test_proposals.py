@@ -461,16 +461,20 @@ def test_the_whole_loop_over_mcp(client):
 
     assert client.post(f"/proposals/{pid}/approve").json()["ok"] is True
 
+    # Gate two: installed but off. A switched-off tool is not offered to the
+    # model at all (6 Oct 2026 - it used to list and then refuse every call),
+    # though the operator sees it, and calling it by name still refuses.
     listed = _rpc(client, h, "tools/list", {}, rid=4)
-    assert "count_widgets" in {t["name"] for t in listed["result"]["tools"]}
-
-    # Gate two: installed but off, so it still refuses.
+    assert "count_widgets" not in {t["name"] for t in listed["result"]["tools"]}
+    assert "count_widgets" in {t["name"] for t in client.get("/tools").json()["tools"]}
     blocked = _rpc(client, h, "tools/call",
                    {"name": "count_widgets", "arguments": {}}, rid=5)
     assert "disabled" in json.dumps(blocked).lower()
 
-    # The operator flips it on — and only now does it run.
+    # The operator flips it on — and only now is it listed, and does it run.
     client.post("/tools/state", json={"tool": "count_widgets", "enabled": True})
+    listed = _rpc(client, h, "tools/list", {}, rid=7)
+    assert "count_widgets" in {t["name"] for t in listed["result"]["tools"]}
     ran = _rpc(client, h, "tools/call",
                {"name": "count_widgets", "arguments": {}}, rid=6)
     assert ran["result"].get("isError") is not True, ran

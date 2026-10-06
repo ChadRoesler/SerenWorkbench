@@ -15,6 +15,10 @@ Serves:
     GET  /tools/state   — current enable/disable snapshot
     GET  /config        — server config JSON
     GET  /logs          — audit log entries
+    GET  /stores        — what the Workbench keeps, and its snapshots
+    POST /stores/snapshot — take one now (and the rest of seren_sinew.stores'
+                          routes: list, archive, rehearse; there is no restore
+                          route - see keeping.py)
     /mcp                — the MCP transport endpoint
 
 Integrates seren_meninges (config/auth/viewer baseplate) and seren_sinew
@@ -29,6 +33,7 @@ the half-cutover state this port started in.
 """
 from __future__ import annotations
 
+import os
 import time
 import logging
 from contextlib import asynccontextmanager, AsyncExitStack
@@ -59,6 +64,12 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
     cfg = config or load_config()
     bearer = cfg.server.resolve_bearer()
 
+    # A restore, when the config asks for one (backup.restore_from +
+    # restore_reason): into an empty tools folder only, before anything reads
+    # it. Refused = the Workbench does not start. No route does this.
+    from . import keeping
+    keeping.restore_if_asked(cfg, log=lambda m: log.info("[seren-workbench] %s", m))
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.config = cfg
@@ -71,10 +82,11 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
         app.state.mcp_config = mcp_config
 
         from .models.tools.proposal_tools import (
-            PROPOSE_TOOL_DEF, LIST_PROPOSALS_TOOL_DEF,
+            PROPOSE_TOOL_DEF, PROPOSE_PLUGIN_TOOL_DEF, LIST_PROPOSALS_TOOL_DEF,
         )
         proposal_tool_names = {
-            PROPOSE_TOOL_DEF["name"], LIST_PROPOSALS_TOOL_DEF["name"],
+            PROPOSE_TOOL_DEF["name"], PROPOSE_PLUGIN_TOOL_DEF["name"],
+            LIST_PROPOSALS_TOOL_DEF["name"],
         }
 
         app.state.tool_registry = build_registry(
@@ -104,6 +116,10 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
                 tools_dir=cfg.dashboard.tools_dir,
                 live_names=lambda: {t.name for t in app.state.tool_registry.all_tools()},
                 self_addr=self_addr,
+                plugins_dir=cfg.dashboard.resolve_plugins_dir(),
+                # Every name the hub has: the standard components and what
+                # is plugged in. Asked at the moment it matters.
+                live_plugins=lambda: set(getattr(getattr(app.state, "upstreams", None), "states", {}) or {}),
             )
         else:
             app.state.proposals = None
@@ -164,9 +180,32 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
             _general = await _stack.enter_async_context(
                 httpx.AsyncClient(timeout=timeout))
 
+            # The standard components, passed through (upstream.py). Built
+            # before the MCP mount reads it; asked for their tools below, once
+            # the mount exists, and never in the way of startup.
+            from .upstream import UpstreamHub
+            from .config import PluginConfig
+            # The config's plugins, then the ones an approved proposal
+            # installed (<tools_dir>/plugins/). The config's win on a name.
+            plugins = list(cfg.plugins) + PluginConfig.many_from_dir(
+                cfg.dashboard.resolve_plugins_dir(), taken={p.name for p in cfg.plugins})
+            app.state.upstreams = UpstreamHub(
+                svc, cfg.components.as_dict(), registry=app.state.tool_registry,
+                self_addr=self_addr, audit_log=app.state.audit_log, plugins=plugins)
+
+            # The services this Workbench holds up through Lodestar's leases
+            # (holds.py): remembered, and let go of when a session forgets.
+            from .holds import DEFAULT_HOLD_MINUTES, DEFAULT_HOLDER, Holds
+            _ensure_cfg = mcp_config.for_tool("ensure_service_running")
+            app.state.holds = Holds(
+                holder=_ensure_cfg.get_string("holder", DEFAULT_HOLDER),
+                hold_minutes=_ensure_cfg.get_float("hold_minutes", DEFAULT_HOLD_MINUTES))
+
             app.state.di_registry = {
                 "memory": await _client(svc.memory_url, "memory"),
                 "runtime_host": await _client(svc.runtime_host_url, "runtime_host"),
+                "holds": app.state.holds,
+                "audit_log": app.state.audit_log,
                 "searxng": await _client(svc.searxng_url),
                 "scheduler": await _client(svc.scheduler_url, "scheduler"),
                 "config": mcp_config,
@@ -227,7 +266,45 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
             if session_manager is not None:
                 await _stack.enter_async_context(session_manager.run())
                 log.info("[seren-workbench] MCP session manager running")
-            yield
+
+            # The tool list as it stands is what a client is told about
+            # changes FROM (mcp.server.ToolListWatch).
+            _watch = getattr(app.state, "tool_watch", None)
+            if _watch is not None:
+                await _watch.prime()
+
+            # Ask the components what they offer - in the background, so the
+            # Workbench is listening while a component that is down takes its
+            # seconds to say so. One that is not up yet is asked again every
+            # minute. SEREN_WORKBENCH_COMPONENTS=off skips it entirely (tests,
+            # a box with none of them).
+            import asyncio as _asyncio
+            _retry = None
+            if mcp_server is not None and os.environ.get("SEREN_WORKBENCH_COMPONENTS", "").lower() not in ("0", "off", "false", "no"):
+                _retry = _asyncio.create_task(app.state.upstreams.run())
+            # The Workbench's own snapshot schedule: one whenever the newest
+            # is older than backup.every_hours (seren_sinew.stores).
+            _snaps = None
+            if app.state.stores is not None and cfg.backup.every_hours > 0:
+                from seren_sinew.stores import snapshot_loop
+                _snaps = _asyncio.create_task(snapshot_loop(lambda: app.state.stores, cfg.backup.every_hours))
+            _lodestar = app.state.di_registry["runtime_host"]
+            _letting_go = _asyncio.create_task(app.state.holds.run(_lodestar))
+            try:
+                yield
+            finally:
+                for _task in (_retry, _snaps, _letting_go):
+                    if _task is not None:
+                        _task.cancel()
+                # What this Workbench still holds goes with it: its memory of
+                # the holds ends here, and a lease nobody remembers is never
+                # released. Bounded - a Lodestar that is down must not hang
+                # the shutdown.
+                try:
+                    await _asyncio.wait_for(
+                        app.state.holds.release_all(_lodestar, "the Workbench is shutting down"), timeout=20)
+                except Exception as exc:  # noqa: BLE001
+                    log.info("[seren-workbench] could not let go of held services at shutdown: %r", exc)
 
         log.info("[seren-workbench] shut down")
 
@@ -246,6 +323,14 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
         service_name="seren-workbench",
         env_prefix="SEREN_WORKBENCH",
     )
+
+    # ── What the Workbench keeps, and snapshots of it ──────────────────
+    # The tools folder: manifests, approved plugins, proposals, the switches.
+    # Same keeper and same routes as Memory, Loci, Margin and the Hippocampus,
+    # so a Lodestar pulls and rehearses these with the rest. See keeping.py.
+    from seren_sinew.stores import add_store_routes
+    app.state.stores = keeping.make_keeper(cfg, APP_VERSION, log=lambda m: log.info("[seren-workbench] %s", m))
+    add_store_routes(app, lambda: app.state.stores)
 
     viewer_dir = Path(__file__).resolve().parent / "viewer" / "ui"
 
@@ -269,6 +354,8 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
     # ── Route subpackage mounts ────────────────────────────────────────
     app.include_router(info_routes.router)
     app.include_router(tools_routes.router)
+    from .routes import components as component_routes
+    app.include_router(component_routes.router)
     from .routes import proposals as proposal_routes
     app.include_router(proposal_routes.router)
     app.include_router(config_routes.router)

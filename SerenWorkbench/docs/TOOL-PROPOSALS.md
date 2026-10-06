@@ -146,6 +146,34 @@ queue:
   `process` with no argv, a `web` with no path, or YAML that doesn't parse.
 - **A missing rationale.** You need to know what it was *for*.
 
+## A proposed plugin
+
+`propose_plugin` asks for an MCP server to be plugged in rather than for one
+tool: a name, an address, a reason. It goes through this same queue, and what
+you are reviewing is different in kind — **an address, not the tools behind
+it.** Nobody can read a server's tools into a proposal and promise they are the
+same tomorrow. So:
+
+- **Nothing is dialled until you approve.** Proposing writes a small yaml into
+  staging and connects to nothing.
+- **Approving plugs it in with every tool switched off** — the ones it has
+  now and any it grows later. Read each tool's description on the Tool State
+  tab and turn on the ones that may run. A switched-off tool is not shown to
+  the model either, so a stranger's tool descriptions do not reach it just by
+  being plugged in.
+- **A proposal never holds a secret.** If the server needs a token, the
+  proposal can only name where one is kept on this box
+  (`bearer_token_env` / `bearer_token_keyring`), and the review says so loudly:
+  *approving sends that secret to that address.* That is the line to read
+  twice. A password in the URL, or a token typed into the name field, is
+  refused before it reaches you.
+- It can't take the name of a standard component or of anything already
+  plugged in, and it can't point at the Workbench itself.
+
+An approved plugin is `<tools_dir>/plugins/<name>.yaml` — the bytes you
+reviewed, moved. Delete the file and restart to unplug it; switch it off from
+`POST /components/state` in the meantime.
+
 ## The safety property, stated plainly
 
 The staging directory sits inside `tools_dir` (at `tools/proposed/` by

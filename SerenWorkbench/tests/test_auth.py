@@ -79,7 +79,7 @@ def test_viewer_with_valid_token(auth_client):
 
 def test_toggle_with_valid_token(auth_client):
     r = auth_client.post("/tools/state",
-                         json={"tool": "remember", "enabled": False},
+                         json={"tool": "get_current_time", "enabled": False},
                          headers={"Authorization": "Bearer sekret"})
     assert r.status_code == 200
     assert r.json()["enabled"] is False

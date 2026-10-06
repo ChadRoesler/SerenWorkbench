@@ -3,9 +3,13 @@
 The tool surface an LLM reaches through.
 
 One process on port **7425** serving an MCP endpoint, an operator dashboard and a small HTTP
-API. Builtin tools cover memory, web search, time, cluster control and the
-scheduler. On top of those, you can add your own tools as **YAML files** —
-no Python, no restart.
+API. It is the one place a model connects: the standard Seren components —
+Memory, Loci, the Corpus Callosum, the Hippocampus and Lodestar — are **passed
+through**, so the Workbench offers each one's own tools exactly as that service
+defines them, with a switch per component (`components:` in the config,
+`GET /components` to see what each is offering). Builtins cover web search,
+time and the cluster. On top of those, you can add your own tools as **YAML
+files** — no Python, no restart.
 
 Part of the [Seren](https://github.com/ChadRoesler) stack, but it doesn't
 require the rest of it. Point it at whichever services you actually run.
@@ -130,6 +134,12 @@ loop as the memory consolidator's draft gate.
 Turn it off with `dashboard.proposals_enabled: false`, which removes the tools
 entirely rather than leaving them to fail.
 
+A model can ask for a whole **MCP server** the same way, with `propose_plugin`:
+an address and a reason. Nothing is dialled until you approve; then the server
+is plugged in and every tool it offers arrives switched off, for you to turn on
+one at a time. A proposal never carries a token — it can only name where one is
+kept on this box, and the review says in so many words that approving sends it.
+
 **→ [docs/TOOL-PROPOSALS.md](https://github.com/ChadRoesler/SerenWorkbench/blob/main/SerenWorkbench/docs/TOOL-PROPOSALS.md)** — what to look at when reviewing one.
 
 ### What reload won't do
@@ -146,6 +156,47 @@ Neither does a restart re-enable anything: toggles are remembered in
 
 ---
 
+## What a connected model can count on
+
+- **The list it has is the list there is.** The Workbench tells connected
+  clients when its tools change (`notifications/tools/list_changed`): a
+  component that came up late, a switch you flipped, a proposal you approved.
+  A tool that is switched off is not offered at all, and appears the moment
+  it is switched on.
+- **A failure is an error.** A builtin that could not do what was asked comes
+  back as an MCP error, not as a successful result whose text is bad news.
+- **It can read its own record.** `list_my_tool_calls` is the audit log from
+  the caller's side: which tools, when, whether they worked. Names and
+  outcomes only — never an argument or a result.
+- **A service it asks for stays up while it is using it.**
+  `ensure_service_running` takes a lease with Lodestar and `release_service`
+  gives it back; the service is stopped when its last holder lets go. A hold
+  a session forgot is let go by the Workbench (`tools.ensure_service_running.
+  hold_minutes`, and at shutdown). `GET /components` shows what is held.
+
+## Snapshots
+
+The tools folder — manifests, approved plugins, proposals, and the switches —
+is what a Workbench keeps, and it is snapshotted like the rest of the Seren
+family: daily by default, into `backups/` beside the tools folder.
+
+```bash
+curl -s localhost:7425/stores                                  # what is kept, and the snapshots
+curl -X POST localhost:7425/stores/snapshot -d '{"reason":"before I tidy up"}'
+curl -X POST localhost:7425/stores/snapshots/<id>/rehearse     # a restore's dry run
+```
+
+Putting one back is two config keys and a restart, into an empty tools folder
+only — there is no route and no tool that restores:
+
+```yaml
+backup:
+  restore_from: /path/to/backups/seren-workbench/20261006-151256
+  restore_reason: "moving to the new box"
+```
+
+---
+
 ## Endpoints
 
 | | |
@@ -156,12 +207,17 @@ Neither does a restart re-enable anything: toggles are remembered in
 | `GET`/`POST` `/tools/state` | enable and disable, per tool or per action |
 | `GET /tools/manifests` | what loaded, what was skipped, and why |
 | `POST /tools/manifests/reload` | re-read the directory, apply it live |
-| `GET /proposals` | tools the model has asked for |
+| `GET /components` | each component and plugin: on or off, reachable or why not; what is held |
+| `POST /components/state` | switch a component or plugin on or off |
+| `GET /proposals` | tools and plugins the model has asked for |
 | `GET /proposals/{id}` | one, with the full manifest and what it would run |
 | `POST /proposals/{id}/approve` | install it, switched off |
 | `POST /proposals/{id}/reject` | refuse it, with a critique |
 | `GET /config` | resolved config, secrets masked |
 | `GET /logs` | recent server logs |
+| `GET /stores` | what the Workbench keeps, and its snapshots |
+| `POST /stores/snapshot` | take a snapshot now |
+| `POST /stores/snapshots/{id}/rehearse` | prove one can be put back, without putting it back |
 | `/mcp/` | the MCP streamable-HTTP transport |
 | `/viewer` | the operator dashboard |
 

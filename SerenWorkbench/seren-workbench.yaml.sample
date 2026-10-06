@@ -46,6 +46,9 @@ server:
 # SEREN_WORKBENCH_MEMORY_BEARER_TOKEN[...] and so on per service.
 services:
   memory_url: http://127.0.0.1:7420        # SerenMemory
+  loci_url: http://127.0.0.1:7422          # SerenLoci
+  callosum_url: http://127.0.0.1:7423      # SerenCorpusCallosum
+  hippocampus_url: http://127.0.0.1:7424   # SerenHippocampus
   lodestar_url: http://127.0.0.1:6361      # SerenLodestar (cluster head);
                                            # runtime_host_url still works
   searxng_url: http://127.0.0.1:8080       # SearXNG metasearch (no token, ever)
@@ -54,6 +57,49 @@ services:
   # bearer_token_env: SEREN_CLUSTER_TOKEN          # shared by memory / lodestar / scheduler
   # memory_bearer_token_env: SEREN_MEMORY_TOKEN    # per-service, wins for memory
   # runtime_host_bearer_token_keyring: seren/lodestar
+
+# ── The standard components ──────────────────────────────────────────────
+# The Workbench is the one place a model connects. Memory, Loci, the Corpus
+# Callosum, the Hippocampus and Lodestar are passed through from each
+# service's own MCP endpoint (<its url>/mcp, with the token above): exactly
+# the tools that service offers, under their own names. Each has a switch.
+# A component that is off, or not running, offers nothing; one that starts
+# later appears on its own within a minute. Everything else - Probe, Theatre,
+# Margin, your own - is a plugin: a manifest in dashboard.tools_dir.
+# Per-component tokens: loci_bearer_token[_env|_keyring], callosum_...,
+# hippocampus_... under services:, like memory's.
+# GET /components says what each one is offering and why not when it is not.
+components:
+  memory: true
+  loci: true
+  corpus_callosum: true
+  hippocampus: true
+  lodestar: true
+
+# ── MCP plugins ──────────────────────────────────────────────────────────
+# Any other service that speaks MCP, passed through the same way: its own
+# tools, under its own toolbox, with the same switch. Margin is the first -
+# and it belongs here, not in a `from:` import, because the import works over
+# Margin's HTTP routes and those need Margin's server.http_reads turned on.
+# Over MCP the diary comes along with nothing opened.
+# plugins:
+#   margin:
+#     url: http://127.0.0.1:7421
+#     bearer_token_env: SEREN_MARGIN_TOKEN    # or bearer_token / bearer_token_keyring
+#   probe:
+#     url: http://127.0.0.1:7430
+#     enabled: false
+#   someones_server:
+#     url: http://127.0.0.1:9000
+#     start_disabled: true     # its tools arrive switched OFF; turn on the ones
+#                              # you want from the dashboard. For a server with
+#                              # something destructive in it, or one you are
+#                              # still reading.
+#
+# A model can also ASK for one (propose_plugin): an address and a reason, for
+# you to approve or reject like a proposed tool. An approved one is a small
+# yaml in <tools_dir>/plugins/, always start_disabled, read at startup beside
+# the plugins above (a name listed here wins). Delete the file to unplug it.
 
 # ── Dashboard / tool-state seeding ───────────────────────────────────────
 # tools_disabled: these tools start DISABLED.
@@ -67,7 +113,8 @@ services:
 # tools_dir:      directory of dynamic-tool YAML manifests (plug-and-play).
 #                 `~` is your home directory. Whoever can write here can make
 #                 the model run a program - see SECURITY.md.
-# proposals_enabled: lets the model ask for new tools via propose_tool. A
+# proposals_enabled: lets the model ask for new tools via propose_tool, and
+#                    for an MCP server to be plugged in via propose_plugin. A
 #                    proposal is written to proposals_dir, which NOTHING
 #                    loads - it only becomes callable when an operator
 #                    approves it through POST /proposals/{id}/approve.
@@ -83,6 +130,29 @@ dashboard:
   state_file: ""
   proposals_enabled: true
   proposals_dir: ""
+
+# ── Snapshots ─────────────────────────────────────────────────────────
+#
+# What a Workbench keeps is its tools folder: the manifests, the plugins an
+# approved proposal installed, the proposals with their critiques, and the
+# switches. None of it can be rebuilt from anywhere else - and a restore
+# without the switches would bring back every tool you turned off, ON. So it
+# is snapshotted like the rest of the family (GET /stores, POST
+# /stores/snapshot, POST /stores/snapshots/{id}/rehearse), and a Lodestar
+# pulls these with everything else.
+#
+# restore_from + restore_reason are THE RESTORE: a snapshot folder (or its
+# .tar.gz) put back at startup, into an EMPTY tools folder only. A folder
+# that holds anything is never overwritten. There is no route and no tool
+# for it - these two keys and a restart.
+backup:
+  enabled: true
+  dir: ""                      # blank => `backups` beside the tools folder
+  every_hours: 24              # 0 = never on its own
+  keep_daily: 14
+  keep_weekly: 8
+  # restore_from: /path/to/backups/seren-workbench/20261006-151256
+  # restore_reason: "moving to the new box"
 
 # ── Update checking ───────────────────────────────────────────────────
 #
@@ -110,3 +180,14 @@ tools:
   # -- fetch_url (WebTools.FetchUrl) --
   fetch_url:
     max_chars: 8000
+
+  # -- ensure_service_running / release_service --
+  # A service asked for here is HELD in Lodestar's lease book under `holder`
+  # until release_service - and let go by the Workbench itself after
+  # hold_minutes with no new ensure (a session that ended without releasing),
+  # and when the Workbench shuts down. timeout is the most a caller may wait
+  # for a service to come up.
+  ensure_service_running:
+    holder: seren-workbench
+    hold_minutes: 120          # 0 = never let go on its own
+    timeout: 300

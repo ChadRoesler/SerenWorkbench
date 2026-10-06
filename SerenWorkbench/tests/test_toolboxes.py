@@ -68,8 +68,7 @@ def test_a_module_constant_regroups_its_tools():
     """The three service modules land in ONE box. Derivation alone would
     have made three, one of them holding a single tool."""
     tools = _by_name()
-    for n in ("start_service", "restart_service",
-              "ensure_service_running", "wait_for_service"):
+    for n in ("ensure_service_running", "wait_for_service"):
         assert tools[n].toolbox == "Services", n
 
 
@@ -78,8 +77,9 @@ def test_a_per_tool_key_beats_the_module_constant():
     can't express: its tools belong in two different boxes."""
     tools = _by_name()
     assert tools["time_since_last_message"].toolbox == "Time & Self"
-    assert tools["preserve_memory_verbatim"].toolbox == "Memory"
-    assert tools["promote_memory_now"].toolbox == "Memory"
+    # preserve_memory_verbatim and promote_memory_now sat in this module under
+    # "Memory" until 6 Oct 2026; they are Memory's own tools, passed through.
+    assert "preserve_memory_verbatim" not in tools and "promote_memory_now" not in tools
 
 
 def test_grouping_actually_reduces_the_scroll():

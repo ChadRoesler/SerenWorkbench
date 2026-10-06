@@ -26,6 +26,16 @@ from seren_workbench.config import WorkbenchConfig, load_config
 
 
 @pytest.fixture(autouse=True)
+def no_component_dialling(monkeypatch):
+    """No test dials the standard components on its own. The Workbench asks
+    Memory, Loci, the Callosum, the Hippocampus and Lodestar for their tools
+    in the background at startup (upstream.py); on a developer's box some of
+    those ARE running, and a test must not depend on that - or call them.
+    test_upstream.py drives the hub with fakes instead."""
+    monkeypatch.setenv("SEREN_WORKBENCH_COMPONENTS", "off")
+
+
+@pytest.fixture(autouse=True)
 def offline_update_checks(monkeypatch):
     """No test may talk to pypi.org.
 

@@ -416,7 +416,7 @@ function proposalCardHtml(p) {
     <div class="tool-card prop-card" id="card-${escapeHtml(p.id)}">
       <div class="card-head prop-head">
         <span class="caret">▸</span>
-        <span class="name">${escapeHtml((p.tool_names || []).join(", ") || "(unnamed)")}</span>
+        <span class="name">${escapeHtml(p.title || (p.tool_names || []).join(", ") || "(unnamed)")}</span>
         <span class="badge ${cls}">${escapeHtml(p.status)}</span>
         ${attempt}
         <span class="src">${escapeHtml(p.id)}</span>
@@ -443,7 +443,7 @@ async function loadDetail(pid) {
              <code>${escapeHtml((e.runs || []).join(" "))}</code></div>`
         : `<div class="eff-runs"><span class="label">calls:</span>
              <code>${escapeHtml(e.calls || "")}</code></div>`;
-      const loud = e.executes_a_binary
+      const loud = (e.executes_a_binary || e.sends_credential || e.kind === "plugin")
         ? `<div class="note err">${escapeHtml(e.review_note || "")}</div>` : "";
       const params = (e.parameters || []).map(x =>
         `<li><code>${escapeHtml(x.name)}</code> <span class="ptype">${escapeHtml(x.type)}</span>

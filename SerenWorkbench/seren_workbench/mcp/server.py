@@ -25,16 +25,22 @@ required list, and DI params stay hidden.
 """
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import inspect
+import json
 import logging
 import os
 import time
+import weakref
 from typing import Any, Dict, Optional
 
 import httpx
 
 from fastapi import FastAPI
 
+from ..dynamic_tools.tool_audit_log import ERROR_MESSAGE_MAX_CHARS, ToolAuditLog
+from ..holds import Holds
 from ..tool_config.mcp_config import McpConfig
 from ..proposals import ProposalStore
 
@@ -43,8 +49,144 @@ logger = logging.getLogger(__name__)
 # Annotation types that are dependency-injected, never exposed in schemas.
 # ProposalStore is here for the same reason the httpx clients are: propose_tool
 # needs it, and a DI param that ISN'T listed here leaks into the LLM-visible
-# schema as a phantom argument the model then tries to supply.
-_DI_TYPES = (httpx.AsyncClient, McpConfig, ProposalStore)
+# schema as a phantom argument the model then tries to supply. ToolAuditLog
+# (list_my_tool_calls) and Holds (ensure_service_running) likewise.
+_DI_TYPES = (httpx.AsyncClient, McpConfig, ProposalStore, ToolAuditLog, Holds)
+
+
+class ToolReportedError(RuntimeError):
+    """A builtin tool answered with its error payload. Raised so the MCP
+    result is marked isError - see _error_payload."""
+
+
+def _error_payload(result: Any) -> str:
+    """The message, when *result* is a builtin's way of saying it failed.
+
+    Every builtin reports failure by RETURNING {"error": ..., "hint": ...}
+    as its text. Over MCP that is a successful call whose content happens to
+    be bad news: the client shows it as a result, the audit log counts it as
+    a success, and a model reading quickly takes "Lodestar unreachable" for
+    an answer. The passed-through tools and the manifest tools already raise
+    (the component's own isError is carried across); this makes the builtins
+    say it the same way, in one place, without each of them changing how it
+    is called directly.
+
+    Deliberately narrow: only a payload that is NOTHING BUT an error and an
+    optional hint. A tool whose real answer has an "error" field among others
+    is answering, not failing."""
+    data = result
+    if isinstance(result, str):
+        text = result.lstrip()
+        if not text.startswith("{") or len(text) > 20_000:
+            return ""
+        try:
+            data = json.loads(text)
+        except ValueError:
+            return ""
+    if not isinstance(data, dict) or not data.get("error") or not set(data) <= {"error", "hint"}:
+        return ""
+    hint = str(data.get("hint") or "").strip()
+    return str(data["error"]).strip() + (f"\n{hint}" if hint else "")
+
+
+class ToolListWatch:
+    """Tells connected clients when the tool list has changed
+    (notifications/tools/list_changed).
+
+    The Workbench's list moves under a client all the time: a component that
+    was down at startup comes up a minute later with twenty tools, a switch
+    is flipped on the dashboard, a proposal is approved, a plugin is plugged
+    in. A client that listed tools once at connect and was never told keeps
+    calling a surface that is no longer there - in particular a model woken
+    at the moment the Workbench started sees the builtins and none of its
+    memory.
+
+    Anything that might have changed the list calls poke(); a moment later
+    (pokes arriving together are one check) the list is fingerprinted - names,
+    descriptions, schemas - and ONLY IF IT DIFFERS from the last one is each
+    session told. So poke() is safe to call from anywhere and costs nothing
+    when nothing changed.
+
+    Sessions are learned as they list or call tools, and held weakly: one
+    that has gone is dropped the first time telling it fails."""
+
+    DEBOUNCE_SECONDS = 0.25
+
+    def __init__(self, mcp: Any) -> None:
+        self._mcp = mcp
+        self._sessions: "weakref.WeakSet[Any]" = weakref.WeakSet()
+        self._last: Optional[str] = None
+        self._dirty = False
+        self._task: Optional[asyncio.Task] = None
+        self.changes = 0                    # how many times the list was seen to differ
+        self.notices = 0                    # notifications sent, over all sessions
+        self.last_change_at: Optional[float] = None
+
+    def see(self, session: Any) -> None:
+        try:
+            self._sessions.add(session)
+        except TypeError:                   # not weak-referenceable: nothing to remember it by
+            pass
+
+    @property
+    def sessions(self) -> int:
+        return len(self._sessions)
+
+    async def _fingerprint(self) -> str:
+        h = hashlib.sha256()
+        for t in sorted(await self._mcp.list_tools(), key=lambda t: t.name):
+            h.update(json.dumps([t.name, t.description, getattr(t, "inputSchema", None)],
+                                sort_keys=True, default=str).encode("utf-8"))
+        return h.hexdigest()
+
+    async def prime(self) -> None:
+        """Take the list as it is now as the starting point (at startup,
+        before any client has connected)."""
+        try:
+            self._last = await self._fingerprint()
+        except Exception as exc:  # noqa: BLE001
+            logger.info("[seren-workbench] could not fingerprint the tool list: %r", exc)
+
+    async def check(self) -> bool:
+        """Compare the list with the last one seen; tell every session if it
+        differs. True when it did."""
+        fp = await self._fingerprint()
+        if fp == self._last:
+            return False
+        self._last = fp
+        self.changes += 1
+        self.last_change_at = time.time()
+        for session in list(self._sessions):
+            try:
+                await session.send_tool_list_changed()
+                self.notices += 1
+            except Exception:  # noqa: BLE001 - a session that has gone
+                self._sessions.discard(session)
+        return True
+
+    def poke(self) -> None:
+        """Something may have changed the list. Never raises, never blocks;
+        outside a running loop (a bare registry in a test) it does nothing."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._dirty = True
+        if self._task is None or self._task.done():
+            self._task = loop.create_task(self._soon())
+
+    async def _soon(self) -> None:
+        while self._dirty:
+            self._dirty = False
+            await asyncio.sleep(self.DEBOUNCE_SECONDS)
+            try:
+                await self.check()
+            except Exception as exc:  # noqa: BLE001 - a notice never takes anything down
+                logger.info("[seren-workbench] tool-list check failed: %r", exc)
+
+    def snapshot(self) -> dict:
+        return {"sessions": self.sessions, "changes": self.changes, "notices": self.notices,
+                "last_change_at": self.last_change_at}
 
 
 def _is_di_annotation(ann) -> bool:
@@ -92,7 +234,60 @@ def mount_mcp_routes(app: FastAPI):
     di_registry: Dict[str, Any] = getattr(app.state, "di_registry", {}) or {}
     audit_log = getattr(app.state, "audit_log", None)
 
-    mcp = FastMCP("seren-workbench")
+    # The standard components' tools are not registered here at all: they
+    # are listed and forwarded live (upstream.py), so what a client sees is
+    # what each service offers at that moment. FastMCP wires its protocol
+    # handlers to self.list_tools / self.call_tool, so overriding those two
+    # is the whole integration - and a builtin whose name a component also
+    # has is left out of the list, because the call would go to the component.
+    #
+    # A SWITCHED-OFF TOOL IS NOT LISTED, whoever it belongs to. That was the
+    # rule for passed-through tools only; a builtin or a manifest tool that
+    # was off still listed and then refused every call, which spends a
+    # model's attention to teach it what the operator already decided. The
+    # call path still refuses (the gate is there, not here), and now that
+    # clients are told when the list changes, a tool appears the moment its
+    # switch is flipped.
+    class _WorkbenchMCP(FastMCP):
+        tool_watch: Any = None
+
+        def _see_session(self) -> None:
+            if self.tool_watch is None:
+                return
+            try:
+                self.tool_watch.see(self._mcp_server.request_context.session)
+            except Exception:  # noqa: BLE001 - LookupError outside a request; or an SDK without it
+                pass
+
+        async def list_tools(self):  # noqa: ANN202
+            self._see_session()
+            tools = [t for t in await super().list_tools() if registry.is_enabled(t.name)]
+            hub = getattr(app.state, "upstreams", None)
+            if hub is None:
+                return tools
+            theirs = hub.list_tools()
+            names = hub.names()
+            return [t for t in tools if t.name not in names] + theirs
+
+        async def call_tool(self, name, arguments):  # noqa: ANN001, ANN202
+            self._see_session()
+            hub = getattr(app.state, "upstreams", None)
+            if hub is not None and hub.owns(name):
+                return await hub.call(name, arguments)
+            return await super().call_tool(name, arguments)
+
+    mcp = _WorkbenchMCP("seren-workbench")
+
+    # Tell clients when the list changes (ToolListWatch). Two halves: say at
+    # initialize that we will (capabilities.tools.listChanged - the SDK
+    # defaults it to false and a client is entitled to ignore notices it was
+    # not promised), and have everything that changes the list poke the watch.
+    # The registry is the one place every such change passes through.
+    watch = ToolListWatch(mcp)
+    mcp.tool_watch = watch
+    app.state.tool_watch = watch
+    registry.on_change = watch.poke
+    _advertise_list_changed(mcp)
 
     _register_builtin_tools(mcp, registry, di_registry, audit_log)
     _register_dynamic_tools(mcp, registry, di_registry, audit_log)
@@ -219,11 +414,17 @@ def _register_wrapped(mcp, fn, tool, registry, di_registry, audit_log=None) -> N
         args = {**_resolve_di(), **{k: v for k, v in kwargs.items() if k in clean_names}}
         try:
             result = await fn(**args)
-            _record_call(_t0, len(kwargs), True)
-            return result
         except Exception as exc:
-            _record_call(_t0, len(kwargs), False, str(exc))
+            _record_call(_t0, len(kwargs), False, _short(str(exc) or type(exc).__name__))
             raise
+        # A builtin that RETURNED its failure: an error to the client and a
+        # failure in the record, like every other kind of tool here.
+        failure = _error_payload(result)
+        if failure:
+            _record_call(_t0, len(kwargs), False, _short(failure))
+            raise ToolReportedError(failure)
+        _record_call(_t0, len(kwargs), True)
+        return result
 
     safe_name = tool.name.replace("-", "_").replace(" ", "_")
     _wrapper.__name__ = f"_mcp_{safe_name}"
@@ -249,10 +450,9 @@ def _register_stub(mcp, tool) -> None:
     LLM-visible schema.
     """
     async def _stub_impl(name=tool.name, desc=tool.description):
-        return {
-            "error": f"tool '{name}' has no registered implementation",
-            "hint": f"This tool is defined but not yet wired. {desc}",
-        }
+        raise ToolReportedError(
+            f"tool '{name}' has no registered implementation\n"
+            f"This tool is defined but not yet wired. {desc}")
 
     safe_name = tool.name.replace("-", "_").replace(" ", "_")
     _stub_impl.__name__ = f"_mcp_stub_{safe_name}"
@@ -365,6 +565,40 @@ def _register_dispatched(mcp, dispatched, tool, registry) -> None:
     _dyn_wrapper.__signature__ = inspect.Signature(parameters=params)
     _dyn_wrapper.__annotations__ = annotations
     mcp.tool(name=tool.name, description=tool.description)(_dyn_wrapper)
+
+
+def _short(text: str) -> str:
+    """An error for the audit log, at the log's own length."""
+    text = " ".join(str(text).split())
+    return text if len(text) <= ERROR_MESSAGE_MAX_CHARS else text[:ERROR_MESSAGE_MAX_CHARS] + "…"
+
+
+def _advertise_list_changed(mcp) -> None:
+    """Make `initialize` say capabilities.tools.listChanged: true.
+
+    The low-level server builds its capabilities from NotificationOptions,
+    which the session manager never passes - so it is always the default,
+    all false. Wrapped on the instance: every new session then starts from
+    options that say what this server actually does. An SDK that has moved
+    this is left alone, with a line in the log - the notices are still sent,
+    and a client is free to act on them or not."""
+    low = getattr(mcp, "_mcp_server", None)
+    original = getattr(low, "create_initialization_options", None)
+    if original is None:
+        logger.info("[seren-workbench] this mcp SDK has no create_initialization_options to wrap; "
+                    "tools.listChanged is not advertised")
+        return
+    try:
+        from mcp.server.lowlevel.server import NotificationOptions
+    except Exception as exc:  # noqa: BLE001
+        logger.info("[seren-workbench] NotificationOptions unavailable (%s); tools.listChanged is not advertised", exc)
+        return
+
+    def _options(notification_options=None, experimental_capabilities=None):
+        return original(notification_options or NotificationOptions(tools_changed=True),
+                        experimental_capabilities)
+
+    low.create_initialization_options = _options
 
 
 # ── Transport plumbing (the three family footguns) ──────────────────────

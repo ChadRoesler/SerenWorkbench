@@ -4,7 +4,7 @@ Functional tests for the mounted MCP HTTP endpoint.
 Drives an actual JSON-RPC ``initialize`` through the live app (with the
 lifespan entered, the way uvicorn runs it) so the whole path is exercised —
 then goes further: ``tools/list`` with the negotiated session, asserting the
-REAL tool surface (all 24 builtins present, schemas carrying true parameter
+REAL tool surface (all the builtins present, schemas carrying true parameter
 names — the regression tests for the endswith-discovery bug, the _stub
 collapse, and the **kwargs schema bug).
 
@@ -127,18 +127,38 @@ def test_bad_json_returns_error(client):
 # list is the 8 recovered by the discovery fix (bare TOOL_DEFINITION names) —
 # each one here is a regression tripwire.
 _EXPECTED_TOOLS = {
-    # suffixed-def tools (the 16 that always registered)
-    "remember", "recall", "forget",
-    "trigger_consolidation", "consolidation_status",
-    "schedule_action", "list_scheduled", "unschedule_action",
-    "start_service", "stop_service", "restart_service",
+    # suffixed-def tools
     "search_the_web", "fetch_url",
-    "time_since_last_message", "preserve_memory_verbatim", "promote_memory_now",
+    "time_since_last_message",
     # the 8 recovered by the discovery fix
     "get_current_time", "which_model", "get_cluster_status",
     "ensure_service_running", "wait_for_service", "get_recent_logs",
     "list_models", "get_self_context",
+    # 6 Oct 2026: letting go of a held service, reading one's own record,
+    # asking for an MCP server to be plugged in
+    "release_service", "list_my_tool_calls", "propose_plugin",
 }
+
+
+# Gone on 6 Oct 2026: these were the Workbench's own copies of tools that
+# belong to Memory, the Hippocampus and Lodestar. Those components' real tools
+# are passed through now (seren_workbench/upstream.py), so a copy here would
+# be a second, older description of the same thing.
+_RETIRED_BUILTINS = {
+    "remember", "recall", "forget", "preserve_memory_verbatim", "promote_memory_now",
+    "trigger_consolidation", "consolidation_status",
+    "schedule_action", "list_scheduled", "unschedule_action",
+    "start_service", "stop_service", "restart_service",
+}
+
+
+def test_the_retired_copies_are_not_builtins_any_more(client):
+    """With no component answering (the tests dial nobody), none of these is
+    offered: they exist only as a component's own tool."""
+    headers = _open_session(client)
+    payload = _parse_sse_json(client.post("/mcp", json=_TOOLS_LIST, headers=headers))
+    names = {t["name"] for t in payload.get("result", {}).get("tools", [])}
+    assert not (_RETIRED_BUILTINS & names), sorted(_RETIRED_BUILTINS & names)
 
 
 def test_tools_list_exposes_full_builtin_surface(client):
@@ -169,10 +189,10 @@ def test_tools_list_schemas_have_real_params(client):
     assert "kwargs" not in props
     assert "runtime_host" not in props and "config" not in props
 
-    remember_schema = tools["remember"].get("inputSchema", {})
-    rprops = set(remember_schema.get("properties", {}).keys())
-    assert rprops == {"content"}, f"remember schema leaked params: {rprops}"
-    assert remember_schema.get("required") == ["content"]
+    fetch_schema = tools["fetch_url"].get("inputSchema", {})
+    fprops = set(fetch_schema.get("properties", {}).keys())
+    assert "url" in fprops and "url" in (fetch_schema.get("required") or []), f"fetch_url schema: {fprops}"
+    assert not ({"searxng", "config", "kwargs"} & fprops), f"fetch_url schema leaked params: {fprops}"
 
 
 def test_disabled_tool_refused_at_call_time(client):

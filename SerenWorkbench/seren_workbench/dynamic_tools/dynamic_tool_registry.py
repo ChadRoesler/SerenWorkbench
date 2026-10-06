@@ -175,6 +175,12 @@ class DynamicToolRegistry:
             # must know about a tool before that tool can be reached.
             self._registry.replace_dynamic(new_infos)
             self._apply_to_mcp(new_infos, added, removed, replaced, builtins)
+            # Again, now that the MCP tool table matches: replace_dynamic
+            # already said "something changed", but a check made between the
+            # two lines above would have fingerprinted the old table.
+            changed = getattr(self._registry, "_changed", None)
+            if callable(changed):
+                changed()
 
             self._current = result
             self._fingerprints = new_fps

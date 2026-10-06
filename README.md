@@ -9,9 +9,11 @@ pip install seren-workbench
 python -m seren_workbench
 ```
 
-Builtin tools cover memory, web search, time, cluster control and the
-scheduler. Your own tools are YAML files you drop in a directory and
-reload — no Python, no restart.
+The standard Seren components — Memory, Loci, the Corpus Callosum, the
+Hippocampus and Lodestar — are passed through: the Workbench offers each
+one's own tools, exactly as that service defines them, with a switch per
+component. Builtins cover web search, time and the cluster. Your own tools
+are YAML files you drop in a directory and reload — no Python, no restart.
 
 - **[SerenWorkbench/README.md](SerenWorkbench/README.md)** — install, connect a client, endpoints
 - **[docs/TOOL-MANIFESTS.md](SerenWorkbench/docs/TOOL-MANIFESTS.md)** — writing a tool, the whole format
