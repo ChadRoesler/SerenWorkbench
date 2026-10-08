@@ -41,7 +41,7 @@ def _client(make_client, tmp_path, world=None):
 def _propose(client, **kw):
     kw.setdefault("name", "bridge")
     kw.setdefault("url", BRIDGE)
-    kw.setdefault("rationale", "the user's BepInEx mod exposes the game over MCP; I want spawn_item for the base tour.")
+    kw.setdefault("rationale", "A BepInEx mod exposes the game over MCP; I want spawn_item for the base tour.")
     return json.loads(asyncio.run(propose_plugin(proposals=client.app.state.proposals, **kw)))
 
 

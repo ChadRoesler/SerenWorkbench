@@ -362,7 +362,7 @@ def test_proposals_can_be_switched_off_entirely(dirs, make_client):
 # ══ The dashboard queue ════════════════════════════════════════════════
 
 def test_the_viewer_has_an_approvals_queue(client):
-    """the user's mental model is 'it shows up in the workbench approvals queue'.
+    """The mental model is 'it shows up in the workbench approvals queue'.
     Before this it was curl-only, which is not a queue anybody checks."""
     html = client.get("/viewer").text
     assert 'data-tab="proposals"' in html, "no Proposals tab"

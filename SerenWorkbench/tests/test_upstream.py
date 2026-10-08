@@ -1,7 +1,7 @@
 """
 The standard components' tools, passed through (seren_workbench.upstream).
 
-Design note: the Workbench is "your centralized mcp" - prepopulated with
+The Workbench is the model's centralized MCP - prepopulated with
 the standard system (Memory, Loci, Corpus Callosum, Hippocampus, Lodestar),
 each with a switch; everything else is a plugin. The components here are
 fakes that speak the part of an MCP session the hub uses, so nothing dials
@@ -193,8 +193,8 @@ def test_the_config_names_every_component():
 
 
 def test_margin_comes_along_as_an_mcp_plugin():
-    """Design note: 'when we move your memory systems, we also bring the
-    diary with it. its part of you.' Margin is not a standard component; it
+    """When the memory systems move, the diary comes with them: it is part of
+    the same self. Margin is not a standard component; it
     is plugged in over MCP, so its HTTP reads stay off."""
     world, reg = World(), _registry()
     world.tools["http://127.0.0.1:7421/mcp/"] = [_tool("note_to_self"), _tool("read_letters"), _tool("bookmark"),
@@ -222,7 +222,7 @@ def test_margin_comes_along_as_an_mcp_plugin():
 
 
 def test_a_gated_plugins_tools_arrive_switched_off(tmp_path):
-    """Design note: someone plugs in their own server that has a delete
+    """Someone plugs in their own server that has a delete
     in it. They want to try most of it without the destructive part being
     live - "a user gated thing". With start_disabled, nothing it offers can
     run until a person switches it on, and what they switch on stays on."""

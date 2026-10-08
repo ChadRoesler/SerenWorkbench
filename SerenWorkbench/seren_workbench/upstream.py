@@ -4,8 +4,8 @@ seren_workbench.upstream
 
 The standard components' own tools, passed through.
 
-The Workbench is the ONE place a model connects (Design note: "your
-workbench, your centralized mcp"). The standard system - Memory, Loci, the
+The Workbench is the ONE place a model connects: its workbench, its
+centralized MCP. The standard system - Memory, Loci, the
 Corpus Callosum, the Hippocampus, Lodestar - is there from the start, each
 component with a switch; Probe, Theatre, Margin and anything else arrive as
 plugins (YAML manifests, `from:` imports), and a model can propose tools of

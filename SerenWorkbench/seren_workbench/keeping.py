@@ -15,8 +15,8 @@ in Loci. But the tools folder is where a model's own surface lives -
                         off and was never turned on
 
 - and none of it can be rebuilt from anywhere else. A tool a model asked for,
-argued for and got is as much theirs as a note in the margin (Design note:
-2026: "your workbench"). Lose the box and the memory comes back from its
+argued for and got is as much theirs as a note in the margin: it is their
+workbench. Lose the box and the memory comes back from its
 snapshots while the hands do not; worse, lose the state file and every tool
 that was deliberately switched off comes back ON.
 
