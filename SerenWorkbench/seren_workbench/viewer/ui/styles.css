@@ -25,9 +25,10 @@
 }
 
 /* ── Views + panels ──────────────────────────── */
-/* The shell shows/hides .view (id === tab) and caps #views at 1100px but does
-   NOT center it — so we center here. Each view holds one .panel card. */
-#views { margin-inline: auto; }
+/* The shell shows/hides .view (id === tab) and caps #views at 1100px. Each
+   view holds one .panel card. */
+/* Left-aligned like every other Seren viewer: the shell caps #views at 1100px
+   and leaves it at the left edge, and the family keeps one shape. */
 .view.active { animation: panel-in 0.18s ease; }
 @keyframes panel-in { from { opacity: 0; } to { opacity: 1; } }
 
