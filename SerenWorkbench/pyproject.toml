@@ -89,6 +89,20 @@ dev = [
     "pytest-asyncio>=0.23",
 ]
 
+# The Seren apps this one talks to over HTTP, and how new each must be.
+# NEVER INSTALLED: nobody asks for [peers]. The Observatory reads it before an
+# upgrade (seren_observatory.upgrades, PEERS) and holds the upgrade when an app
+# listed here is in the cluster but older; an app that is not there at all is
+# not required. Raise a floor in the same commit that starts using what the
+# newer peer added. The stores' side of the deal: within a major, only add.
+peers = [
+    "seren-memory>=5.0",
+    "seren-loci>=5.0",
+    "seren-corpus-callosum>=5.0",
+    "seren-hippocampus>=5.0",
+    "seren-lodestar>=5.0",
+]
+
 [project.scripts]
 seren-workbench = "seren_workbench.__main__:main"
 
