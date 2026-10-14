@@ -54,6 +54,7 @@
     <Compile Include="seren_workbench\models\tools\cluster_tools.py" />
     <Compile Include="seren_workbench\models\tools\consolidator_tools.py" />
     <Compile Include="seren_workbench\models\tools\ensure_service_running_tool.py" />
+    <Compile Include="seren_workbench\models\tools\make_image_tool.py" />
     <Compile Include="seren_workbench\models\tools\introspection_and_agency_tools.py" />
     <Compile Include="seren_workbench\models\tools\log_tools.py" />
     <Compile Include="seren_workbench\models\tools\memory_tools.py" />
