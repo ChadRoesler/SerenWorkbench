@@ -442,7 +442,7 @@ dist/
 .eggs/
 .pytest_cache/
 
-# Makefile test venvs (belt-and-suspenders; the targets also delete them)
+# local test venvs
 .venv*/
 venv/
 
