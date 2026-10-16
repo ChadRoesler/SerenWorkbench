@@ -55,6 +55,7 @@
     <Compile Include="seren_workbench\models\tools\consolidator_tools.py" />
     <Compile Include="seren_workbench\models\tools\ensure_service_running_tool.py" />
     <Compile Include="seren_workbench\models\tools\make_image_tool.py" />
+    <Compile Include="seren_workbench\models\tools\rich_result.py" />
     <Compile Include="seren_workbench\models\tools\introspection_and_agency_tools.py" />
     <Compile Include="seren_workbench\models\tools\log_tools.py" />
     <Compile Include="seren_workbench\models\tools\memory_tools.py" />
@@ -70,6 +71,7 @@
     <Compile Include="seren_workbench\models\tools\__init__.py" />
     <Compile Include="seren_workbench\proposals.py" />
     <Compile Include="seren_workbench\routes\config.py" />
+    <Compile Include="seren_workbench\routes\gallery.py" />
     <Compile Include="seren_workbench\routes\info.py" />
     <Compile Include="seren_workbench\routes\logs.py" />
     <Compile Include="seren_workbench\routes\proposals.py" />
@@ -84,6 +86,7 @@
     <Compile Include="tests\conftest.py" />
     <Compile Include="tests\test_auth.py" />
     <Compile Include="tests\test_dynamic_tools.py" />
+    <Compile Include="tests\test_gallery.py" />
     <Compile Include="tests\test_mcp_endpoint.py" />
     <Compile Include="tests\test_mcp_mount.py" />
     <Compile Include="tests\test_proposals.py" />

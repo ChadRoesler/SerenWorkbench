@@ -50,6 +50,7 @@ from .routes import info as info_routes
 from .routes import tools as tools_routes
 from .routes import config as config_routes
 from .routes import logs as logs_routes
+from .routes import gallery as gallery_routes
 
 from seren_meninges import get_version
 from seren_meninges.auth import bearer_auth_middleware
@@ -360,5 +361,6 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
     app.include_router(proposal_routes.router)
     app.include_router(config_routes.router)
     app.include_router(logs_routes.router)
+    app.include_router(gallery_routes.router)
 
     return app

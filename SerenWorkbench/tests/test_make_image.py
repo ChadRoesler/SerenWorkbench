@@ -127,3 +127,65 @@ def test_the_tools_are_registered(make_client, tmp_path):
     tools = {t["name"]: t for t in make_client(cfg).get("/tools").json()["tools"]}
     assert tools["make_image"]["toolbox"] == "Creation" and "image_options" in tools
     assert [p["name"] for p in tools["make_image"]["parameters"]][:2] == ["prompt", "why"]
+
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
+
+
+def test_the_picture_goes_back_with_the_answer_not_only_a_path_on_this_box(tmp_path):
+    """15 Oct 2026: every picture stayed on the NUC - a path is no use to a
+    harness on the desktop. The answer is still the same JSON text, and it
+    carries the picture itself for the MCP wrapper to send as an image."""
+    from seren_workbench.models.tools.rich_result import WithImages
+    body = {"ok": True, "node": "spark128gb", "model": "m", "seed": 7, "seconds": 30.0,
+            "images": [{"mime": "image/png", "data": base64.b64encode(PNG).decode()}]}
+    out = run(mi.make_image("a wren", runtime_host=FakeLodestar(body=body).client(), config=config(tmp_path)))
+    assert isinstance(out, WithImages) and json.loads(out)["shown"] == 1 and json.loads(out)["node"] == "spark128gb"
+    assert out.images == [(PNG, "png")]
+    # not a picture (the fake's b"PNG0"): kept on disk, not shown
+    out = run(mi.make_image("a wren", runtime_host=FakeLodestar().client(), config=config(tmp_path)))
+    assert json.loads(out)["shown"] == 0 and out.images == []
+
+
+def test_pictures_too_big_to_show_are_counted_not_sent():
+    from seren_workbench.models.tools.rich_result import MAX_IMAGE_BYTES, WithImages
+    big = b"\x89PNG\r\n\x1a\n" + b"\x00" * MAX_IMAGE_BYTES
+    w = WithImages("{}", [(PNG, "png"), (big, "png")])
+    assert w == "{}" and w.images == [(PNG, "png")] and w.skipped == 1
+
+
+def test_make_image_promises_no_return_type():
+    """The MCP wrapper hands FastMCP make_image's own signature. With `-> str`
+    FastMCP promises a structured {"result": str} and then cannot build it from
+    the text + image blocks a WithImages becomes: the picture was drawn and
+    the caller got "Input should be a valid string" (15 Oct 2026)."""
+    import inspect
+    assert inspect.signature(mi.make_image).return_annotation is inspect.Signature.empty
+
+
+def test_over_mcp_the_picture_is_an_image_block_beside_the_text(make_client, monkeypatch):
+    """The whole way out: the MCP wrapper turns the answer's pictures into
+    image content."""
+    import pytest
+    pytest.importorskip("mcp")
+    from seren_workbench.models.tools.rich_result import WithImages
+
+    async def make_image(prompt: str, **kwargs):          # matched by name
+        return WithImages(json.dumps({"ok": True, "saved": ["/far/away.png"]}), [(PNG, "png")])
+    make_image.__module__ = mi.__name__                     # and defined there, as far as it can tell
+    monkeypatch.setattr(mi, "make_image", make_image)
+    c = make_client()
+    hdrs = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
+    r = c.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+        "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "0"}}}, headers=hdrs)
+    if r.headers.get("mcp-session-id"):
+        hdrs["mcp-session-id"] = r.headers["mcp-session-id"]
+    c.post("/mcp", json={"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}, headers=hdrs)
+    r = c.post("/mcp", json={"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                             "params": {"name": "make_image", "arguments": {"prompt": "a wren"}}}, headers=hdrs)
+    data = next(json.loads(l[5:]) for l in r.text.splitlines() if l.startswith("data:"))
+    content = data["result"]["content"]
+    assert data["result"].get("isError") is not True, data
+    assert [b["type"] for b in content] == ["text", "image"]
+    assert json.loads(content[0]["text"])["saved"] == ["/far/away.png"]
+    assert content[1]["mimeType"] == "image/png" and base64.b64decode(content[1]["data"]) == PNG

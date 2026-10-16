@@ -41,6 +41,7 @@ from fastapi import FastAPI
 
 from ..dynamic_tools.tool_audit_log import ERROR_MESSAGE_MAX_CHARS, ToolAuditLog
 from ..holds import Holds
+from ..models.tools.rich_result import WithImages
 from ..tool_config.mcp_config import McpConfig
 from ..proposals import ProposalStore
 
@@ -424,6 +425,11 @@ def _register_wrapped(mcp, fn, tool, registry, di_registry, audit_log=None) -> N
             _record_call(_t0, len(kwargs), False, _short(failure))
             raise ToolReportedError(failure)
         _record_call(_t0, len(kwargs), True)
+        if isinstance(result, WithImages) and result.images:
+            # Text and pictures as separate content blocks: the client sees
+            # the image itself, not a path on this box (make_image).
+            from mcp.server.fastmcp import Image
+            return [str(result), *(Image(data=data, format=fmt) for data, fmt in result.images)]
         return result
 
     safe_name = tool.name.replace("-", "_").replace(" ", "_")

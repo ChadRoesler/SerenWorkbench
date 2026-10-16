@@ -37,6 +37,7 @@ from typing import Any, Optional
 import httpx
 
 from ...tool_config.mcp_config import McpConfig
+from .rich_result import WithImages, image_format
 
 TOOLBOX = "Creation"
 
@@ -148,7 +149,14 @@ async def make_image(
     runtime_host: httpx.AsyncClient = None,
     config: Optional[McpConfig] = None,
     **kwargs,
-) -> str:
+):
+    # NO return annotation, on purpose. The MCP wrapper hands FastMCP this
+    # signature, and a `-> str` makes FastMCP promise a structured
+    # {"result": str} - which it then tries to build from the list of text +
+    # Image blocks the wrapper returns for a WithImages, and fails: "Input
+    # should be a valid string". The drawing succeeded, the caller saw an
+    # error, the pictures never reached the chat. Un-annotated, FastMCP sends
+    # the content blocks as they are.
     s = _settings(config)
     if not s["enabled"]:
         return _err("Pictures are turned off here.", "tools.make_image.enabled in the Workbench's config.")
@@ -197,21 +205,30 @@ async def make_image(
             "model": out.get("model"), "base": out.get("base"), "loras": out.get("loras"), "seed": out.get("seed"),
             "width": out.get("width"), "height": out.get("height"), "node": out.get("node"),
             "seconds": out.get("seconds"), "at": dt.datetime.now().isoformat(timespec="seconds")}
-    saved = []
+    saved, pictures = [], []
     for i, im in enumerate(out.get("images") or []):
         ext = ".jpg" if "jpeg" in (im.get("mime") or "") else ".png"
         path = folder / f"{stamp}-{out.get('seed')}-{_slug(why or prompt)}{f'-{i + 1}' if count > 1 else ''}{ext}"
-        path.write_bytes(base64.b64decode(im.get("data") or ""))
+        data = base64.b64decode(im.get("data") or "")
+        path.write_bytes(data)
         path.with_suffix(".json").write_text(json.dumps({**note, "file": path.name}, indent=1), encoding="utf-8")
         saved.append(str(path))
+        if fmt := image_format(data):
+            pictures.append((data, fmt))
     if not saved:
         return _err("The node finished but sent no picture back.", "get_recent_logs comfy shows what ComfyUI said.")
     print(f"[mcp-audit] MakeImage: {len(saved)} picture(s), seed {out.get('seed')}, {out.get('model')}, "
           f"{out.get('seconds')}s", file=sys.stderr)
-    return json.dumps({"ok": True, "saved": saved, "seed": out.get("seed"), "model": out.get("model"),
-                       "loras": out.get("loras"), "prompt": out.get("prompt"), "notes": out.get("notes") or [],
-                       "seconds": out.get("seconds"),
-                       "today": f"{done + len(saved)}" + (f" of {s['daily_limit']}" if s["daily_limit"] else "")})
+    # The pictures go back WITH the answer (image content over MCP): the one
+    # who asked sees them, and a harness on another box keeps them - the
+    # gallery path alone is on this box.
+    answer = WithImages("", pictures)
+    return WithImages(json.dumps({
+        "ok": True, "saved": saved, "seed": out.get("seed"), "model": out.get("model"),
+        "loras": out.get("loras"), "prompt": out.get("prompt"), "notes": out.get("notes") or [],
+        "seconds": out.get("seconds"), "node": out.get("node"),
+        "shown": len(answer.images), **({"not_shown": answer.skipped} if answer.skipped else {}),
+        "today": f"{done + len(saved)}" + (f" of {s['daily_limit']}" if s["daily_limit"] else "")}), answer.images)
 
 
 async def image_options(model: str = "", runtime_host: httpx.AsyncClient = None, **kwargs) -> str:
