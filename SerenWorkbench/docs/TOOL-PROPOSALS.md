@@ -61,7 +61,7 @@ is waiting, so you find out because it's there, not because you went looking.
 | `GET /proposals` | everything, newest first, with a pending count |
 | `GET /proposals/{id}` | one proposal **including the full manifest text** |
 | `POST /proposals/{id}/approve` | install it, **switched off** |
-| `POST /proposals/{id}/reject` | `{"critique": "..."}` — required |
+| `POST /proposals/{id}/reject` | `{"critique": "...", "final": false}` — the critique is required |
 | `POST /tools/state` | the second gate: `{"tool": "...", "enabled": true}` |
 
 ### Two gates, not one
@@ -128,6 +128,19 @@ can't read from here — inline the logic or point at something in
 A rejected proposal isn't dead. The model can revise and re-propose citing
 `supersedes`, and you'll see the chain and the attempt number.
 
+### "Not like this" versus "not at all"
+
+The reject form has a **Permanently reject** box. Unticked (the default) is
+*not like this*: the critique is an invitation to revise. Ticked is *not at
+all*: the chain closes, nothing can supersede it, and a later proposal that
+asks for the same tool or plugin name is refused at propose time with your
+critique attached. So write the critique as the reason you never want to see
+it, not as notes for a second attempt.
+
+It is recorded as `final: true` on the proposal and shown as a `permanent`
+badge. To lift it, delete that proposal's record from the staging directory;
+there is deliberately no route for it.
+
 ---
 
 ## Refused before you ever see it
@@ -173,6 +186,15 @@ same tomorrow. So:
 An approved plugin is `<tools_dir>/plugins/<name>.yaml` — the bytes you
 reviewed, moved. Delete the file and restart to unplug it; switch it off from
 `POST /components/state` in the meantime.
+
+## A proposed project
+
+A model can also ask to start a **piece of work** - a plan, the one
+directory it may touch, the sites it may fetch from, and the tools it will
+need - and later to **revise** one that was agreed. Same queue, same gates;
+each need is its own proposal under its parent. Approving a project agrees
+to the plan and the limits and turns nothing on. See
+[PROJECT-PROPOSALS.md](PROJECT-PROPOSALS.md).
 
 ## The safety property, stated plainly
 

@@ -160,10 +160,12 @@ PROPOSE_PLUGIN_TOOL_DEF = {
 LIST_PROPOSALS_TOOL_DEF = {
     "name": "list_my_proposals",
     "description": (
-        "List tools you have proposed and where each one stands: pending, "
-        "approved, or rejected with the reviewer's critique. Check here before "
-        "proposing something — you may already have asked, and a rejected "
-        "proposal carries the reason you should be revising against."
+        "List everything you have proposed - tools, plugins, projects and "
+        "revisions - and where each one stands: pending, approved, or rejected "
+        "with the reviewer's critique. A need staged by a project shows its "
+        "parent and for_project. Check here before proposing something — you "
+        "may already have asked, and a rejected proposal carries the reason you "
+        "should be revising against."
     ),
     "input_schema": {
         "type": "object",
@@ -276,10 +278,15 @@ async def list_my_proposals(
                 "status": p.status,
                 "tools": p.tool_names,
                 **({"plugin": p.plugin} if p.plugin else {}),
+                **({"project": p.project} if p.project else {}),
+                **({"revision": p.revision} if p.revision else {}),
+                **({"parent": p.parent, "for_project": p.for_project} if p.parent else {}),
+                "title": p.title,
                 "rationale": p.rationale,
                 "attempt": p.attempt,
                 "supersedes": p.supersedes,
                 "critique": p.critique,
+                **({"final": True} if p.final else {}),
                 "age": _age(p.created_at),
             }
             for p in items

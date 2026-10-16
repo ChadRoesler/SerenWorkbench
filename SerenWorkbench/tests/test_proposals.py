@@ -289,6 +289,74 @@ def test_a_revision_supersedes_the_rejected_one(client):
     assert by_id[second["proposal_id"]]["supersedes"] == first
 
 
+def test_a_permanent_rejection_closes_the_chain(client):
+    """'Not like this' invites a revision; 'not at all' does not. A final
+    rejection cannot be superseded, and the critique rides on the refusal
+    so the proposer learns why rather than just hitting a wall."""
+    first = _propose(client)["proposal_id"]
+    r = client.post(f"/proposals/{first}/reject",
+                    json={"critique": "nothing on this box should count widgets.", "final": True})
+    assert r.json()["ok"] is True and r.json()["proposal"]["final"] is True
+
+    again = _propose(client, supersedes=first, rationale="Narrowed it.")
+    assert again.get("ok") is not True
+    assert "permanently" in again["error"] and "count widgets" in again["error"]
+
+    by_id = {p["id"]: p for p in client.get("/proposals?status=").json()["proposals"]}
+    assert by_id[first]["status"] == "rejected"          # not superseded
+
+
+def test_a_permanently_rejected_name_is_refused_even_without_supersedes(client):
+    """Dropping `supersedes` and asking fresh must not launder the name."""
+    first = _propose(client)["proposal_id"]
+    client.post(f"/proposals/{first}/reject", json={"critique": "no, ever.", "final": True})
+
+    fresh = _propose(client, rationale="Different wording, same ask.")
+    assert fresh.get("ok") is not True
+    assert "count_widgets" in fresh["error"] and "no, ever." in fresh["error"]
+
+    # A different name is a different proposal, and still welcome.
+    other = _propose(client, manifest=_manifest("count_sprockets"))
+    assert other["ok"] is True
+
+
+def test_an_ordinary_rejection_is_still_an_invitation(client):
+    first = _propose(client)["proposal_id"]
+    client.post(f"/proposals/{first}/reject", json={"critique": "too broad", "final": False})
+    second = _propose(client, supersedes=first, rationale="Narrowed it.")
+    assert second["ok"] is True and second["attempt"] == 2
+
+
+def test_the_proposer_is_told_a_rejection_was_final(client):
+    pid = _propose(client)["proposal_id"]
+    client.post(f"/proposals/{pid}/reject", json={"critique": "never.", "final": True})
+    import asyncio
+    from seren_workbench.models.tools.proposal_tools import list_my_proposals
+    mine = json.loads(asyncio.run(list_my_proposals(proposals=client.app.state.proposals)))
+    assert mine["proposals"][0]["final"] is True
+
+
+def test_a_permanently_rejected_plugin_name_is_refused_too(client):
+    store = client.app.state.proposals
+    p = store.propose_plugin("widget_bridge", "http://10.0.0.9:9000/mcp", "a game mod's bridge")
+    client.post(f"/proposals/{p.id}/reject", json={"critique": "that box is not ours.", "final": True})
+    from seren_workbench.proposals import ProposalError
+    with pytest.raises(ProposalError, match="permanently"):
+        store.propose_plugin("widget_bridge", "http://10.0.0.9:9000/mcp", "asking again")
+
+
+def test_the_viewer_rejects_through_a_form_not_a_prompt(client):
+    """A one-line browser prompt invites a one-word critique. The form has
+    room for prose and carries the permanent switch."""
+    html = client.get("/viewer").text
+    assert 'id="reject-dialog"' in html, "no reject form"
+    assert 'id="reject-critique"' in html, "no critique box"
+    assert 'id="reject-final"' in html, "no permanent-reject switch"
+    assert "window.prompt" not in html.split("function actOn")[1][:600], (
+        "reject still goes through window.prompt"
+    )
+
+
 def test_approved_and_rejected_cannot_be_re_reviewed(client):
     pid = _propose(client)["proposal_id"]
     client.post(f"/proposals/{pid}/approve")

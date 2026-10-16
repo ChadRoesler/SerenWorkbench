@@ -72,6 +72,8 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
+from . import projects as _proj
+
 MAX_MANIFEST_CHARS = 32_000
 VALID_KINDS = ("process", "web")
 _ID_RE = re.compile(r"^prop_[0-9a-f]{10}$")
@@ -95,12 +97,28 @@ class Proposal:
     attempt: int = 1
     supersedes: Optional[str] = None
     installed_as: Optional[str] = None
+    # A rejection the reviewer closed for good: no revision may supersede
+    # it, and a later proposal that asks for the same tool (or plugin) name
+    # is refused with this critique. "Not like this" is `final=False`;
+    # "not at all" is `final=True`.
+    final: bool = False
     # "tool" (a manifest) or "plugin" (an MCP server to plug in). For a
     # plugin, `plugin` holds its name / url / display / credential pointer
     # and `title` is what a list shows in place of tool names.
     kind: str = "tool"
     plugin: Optional[Dict[str, Any]] = None
     title: str = ""
+    # "project": a piece of work with a plan, a workspace, a download
+    # allowlist and needs; "revision": a change to an approved project.
+    # `project` holds the contract fields; `revision` the diff and the
+    # project it is against. A need staged by a project or a revision is an
+    # ordinary tool/plugin proposal that carries `parent` (the proposal that
+    # staged it) and `for_project` (the project's name), so the reviewer can
+    # see the family and the contract can point at the gates.
+    project: Optional[Dict[str, Any]] = None
+    revision: Optional[Dict[str, Any]] = None
+    parent: Optional[str] = None
+    for_project: Optional[str] = None
     # Filled on read, not stored twice.
     manifest: str = ""
     # Convenience for the reviewer: what each tool would actually DO.
@@ -122,9 +140,15 @@ class ProposalStore:
         self_addr: Optional[tuple[str, int]] = None,
         plugins_dir: Optional[str] = None,
         live_plugins: Optional[Any] = None,
+        projects_dir: Optional[str] = None,
     ) -> None:
         self._dir = Path(proposals_dir)
         self._tools_dir = Path(tools_dir)
+        # Where an approved project's contract lives: <tools_dir>/projects/<name>/
+        # with project.yaml, plan.md, testing.md and history.json. Nothing
+        # loads it; the loader's glob is non-recursive and these are not
+        # manifests anyway.
+        self._projects_dir = Path(projects_dir) if projects_dir else self._tools_dir / "projects"
         # Where an approved plugin is installed, and a callable for the names
         # plugged in right now (the hub's components and plugins) - a
         # callable for the same reason live_names is one.
@@ -150,6 +174,8 @@ class ProposalStore:
         manifest_yaml: str,
         rationale: str,
         supersedes: Optional[str] = None,
+        parent: Optional[str] = None,
+        for_project: Optional[str] = None,
     ) -> Proposal:
         """Validate and stage a manifest. Raises ProposalError on refusal."""
         if not manifest_yaml or not manifest_yaml.strip():
@@ -167,9 +193,8 @@ class ProposalStore:
 
         names, effects = self._validate(manifest_yaml, set(self._live_names()))
 
-        prior = self.get(supersedes) if supersedes else None
-        if supersedes and prior is None:
-            raise ProposalError(f"proposal '{supersedes}' not found to supersede.")
+        prior = self._prior(supersedes)
+        self._refuse_if_closed(names, "tool")
 
         pid = "prop_" + secrets.token_hex(5)
         p = Proposal(
@@ -182,6 +207,8 @@ class ProposalStore:
             supersedes=supersedes,
             manifest=manifest_yaml,
             effects=effects,
+            parent=parent,
+            for_project=for_project,
         )
 
         self._dir.mkdir(parents=True, exist_ok=True)
@@ -205,6 +232,8 @@ class ProposalStore:
         bearer_token_env: str = "",
         bearer_token_keyring: str = "",
         supersedes: Optional[str] = None,
+        parent: Optional[str] = None,
+        for_project: Optional[str] = None,
     ) -> Proposal:
         """Validate and stage a request to plug in an MCP server. Nothing is
         connected to: the address is not even dialled until an operator
@@ -248,9 +277,8 @@ class ProposalStore:
         if env and ring:
             raise ProposalError("name one place the token is kept, not two.")
 
-        prior = self.get(supersedes) if supersedes else None
-        if supersedes and prior is None:
-            raise ProposalError(f"proposal '{supersedes}' not found to supersede.")
+        prior = self._prior(supersedes)
+        self._refuse_if_closed([name], "plugin")
 
         entry: Dict[str, Any] = {"url": url}
         if (display or "").strip():
@@ -306,6 +334,8 @@ class ProposalStore:
             plugin={"name": name, "url": url, "display": entry.get("display", ""),
                     "credential": credential or None},
             title=f"plugin: {name}",
+            parent=parent,
+            for_project=for_project,
         )
         self._dir.mkdir(parents=True, exist_ok=True)
         (self._dir / f"{pid}.yaml").write_text(text, encoding="utf-8")
@@ -314,6 +344,229 @@ class ProposalStore:
             prior.status = "superseded"
             self._write_record(prior)
         return p
+
+    # ── Propose a project ──────────────────────────────────────────────
+
+    def propose_project(
+        self,
+        name: str,
+        title: str,
+        plan: str,
+        rationale: str,
+        workspace: str = "",
+        testing: str = "",
+        downloads: Optional[List[Any]] = None,
+        needs: Optional[List[Any]] = None,
+        supersedes: Optional[str] = None,
+    ) -> Proposal:
+        """Stage a piece of work for review: a plan, where it happens, what
+        it may fetch, what it needs. Each need is staged as a child proposal
+        of its own kind, through the same validators, so approving the
+        project approves the plan and the limits - never a tool."""
+        if not rationale or not rationale.strip():
+            raise ProposalError(
+                "rationale is required. Say what the project is for and what "
+                "made you want to start it."
+            )
+        try:
+            name = _proj.check_name(name)
+            title = _proj.check_title(title, name)
+            plan = _proj.check_text(plan, "plan", required=True)
+            testing = _proj.check_text(testing, "testing notes", required=False)
+            workspace = _proj.check_workspace(workspace)
+            dl = _proj.check_downloads(downloads)
+            needs_in = _proj.check_needs(needs)
+        except _proj.ProjectError as ex:
+            raise ProposalError(str(ex))
+        if name in self._live_projects():
+            raise ProposalError(
+                f"a project named '{name}' is already approved. Propose a revision "
+                "of it (propose_revision) rather than a second project."
+            )
+        if name in self._pending_projects():
+            raise ProposalError(
+                f"a project named '{name}' is already awaiting review. Supersede "
+                "that proposal instead of duplicating it."
+            )
+        prior = self._prior(supersedes)
+        self._refuse_if_closed([name], "project")
+
+        pid = "prop_" + secrets.token_hex(5)
+        children = self._stage_needs(needs_in, parent=pid, for_project=name)
+        text = _proj.contract_yaml(name, title, workspace, dl, children)
+        effect = self._project_effect(name, title, workspace, dl, children, "project")
+        p = Proposal(
+            id=pid,
+            status="pending",
+            tool_names=[],
+            rationale=rationale.strip(),
+            created_at=time.time(),
+            attempt=(prior.attempt + 1) if prior else 1,
+            supersedes=supersedes,
+            manifest=text,
+            effects=[effect],
+            kind="project",
+            project={"name": name, "title": title, "workspace": workspace or None,
+                     "downloads": dl, "needs": children},
+            title=f"project: {title}",
+        )
+        self._dir.mkdir(parents=True, exist_ok=True)
+        (self._dir / f"{pid}.yaml").write_text(text, encoding="utf-8")
+        (self._dir / f"{pid}.plan.md").write_text(plan, encoding="utf-8")
+        (self._dir / f"{pid}.testing.md").write_text(testing, encoding="utf-8")
+        self._write_record(p)
+        if prior is not None and prior.status == "rejected":
+            prior.status = "superseded"
+            self._write_record(prior)
+        return p
+
+    def propose_revision(
+        self,
+        project: str,
+        note: str,
+        plan: Optional[str] = None,
+        testing: Optional[str] = None,
+        workspace: Optional[str] = None,
+        downloads: Optional[List[Any]] = None,
+        needs: Optional[List[Any]] = None,
+        supersedes: Optional[str] = None,
+    ) -> Proposal:
+        """A change to an APPROVED project, as its own proposal. Fields given
+        replace; fields left out stay. `needs` here are additions: each is
+        staged as a child and joins the contract on approval. The reviewed
+        bytes are the full resulting project.yaml; the record carries the
+        diff the reviewer actually reads."""
+        if not note or not note.strip():
+            raise ProposalError(
+                "a note is required: what changes and why. A revision with no "
+                "reason reads as drift."
+            )
+        try:
+            name = _proj.check_name(project)
+        except _proj.ProjectError as ex:
+            raise ProposalError(str(ex))
+        live = self.project(name)
+        if live is None:
+            raise ProposalError(
+                f"no approved project named '{name}'. A revision is against something "
+                "that was agreed; propose the project first."
+            )
+        if any(p.revision and p.revision.get("project") == name for p in self.list("pending")):
+            raise ProposalError(
+                f"a revision of '{name}' is already awaiting review. Supersede it "
+                "rather than stacking another."
+            )
+        before = live["contract"]
+        try:
+            new_plan = _proj.check_text(plan, "plan", required=True) if plan is not None else None
+            new_testing = _proj.check_text(testing, "testing notes", required=False) if testing is not None else None
+            new_ws = _proj.check_workspace(workspace) if workspace is not None else (before.get("workspace") or "")
+            new_dl = _proj.check_downloads(downloads) if downloads is not None else list(before.get("downloads") or [])
+            adds = _proj.check_needs(needs)
+        except _proj.ProjectError as ex:
+            raise ProposalError(str(ex))
+        prior = self._prior(supersedes)
+        self._refuse_if_closed([name], "revision")
+
+        pid = "prop_" + secrets.token_hex(5)
+        children = self._stage_needs(adds, parent=pid, for_project=name)
+        all_needs = list(before.get("needs") or []) + children
+        title = before.get("title") or name
+        text = _proj.contract_yaml(name, title, new_ws, new_dl, all_needs)
+        after = _proj.parse_contract(text)
+        changes = _proj.diff_contracts(before, after, new_plan is not None, new_testing is not None)
+        changes["note"] = note.strip()
+        effect = self._project_effect(name, title, new_ws, new_dl, all_needs, "revision", changes)
+        p = Proposal(
+            id=pid,
+            status="pending",
+            tool_names=[],
+            rationale=note.strip(),
+            created_at=time.time(),
+            attempt=(prior.attempt + 1) if prior else 1,
+            supersedes=supersedes,
+            manifest=text,
+            effects=[effect],
+            kind="revision",
+            revision={"project": name, "note": note.strip(), "changes": changes,
+                      "needs_added": children},
+            title=f"revision: {title}",
+            for_project=name,
+        )
+        self._dir.mkdir(parents=True, exist_ok=True)
+        (self._dir / f"{pid}.yaml").write_text(text, encoding="utf-8")
+        if new_plan is not None:
+            (self._dir / f"{pid}.plan.md").write_text(new_plan, encoding="utf-8")
+        if new_testing is not None:
+            (self._dir / f"{pid}.testing.md").write_text(new_testing, encoding="utf-8")
+        self._write_record(p)
+        if prior is not None and prior.status == "rejected":
+            prior.status = "superseded"
+            self._write_record(prior)
+        return p
+
+    def _stage_needs(self, needs: List[Dict[str, Any]], parent: str, for_project: str) -> List[Dict[str, Any]]:
+        """Each need becomes a real proposal of its kind. All-or-nothing: a
+        need that fails validation takes the ones staged before it back out,
+        so a half-staged project never sits in the queue."""
+        staged: List[Proposal] = []
+        out: List[Dict[str, Any]] = []
+        try:
+            for n in needs:
+                if n["kind"] == "tool":
+                    c = self.propose(str(n.get("manifest")), str(n.get("rationale")),
+                                     parent=parent, for_project=for_project)
+                    out.append({"proposal": c.id, "kind": "tool", "name": ", ".join(c.tool_names)})
+                else:
+                    c = self.propose_plugin(str(n.get("name")), str(n.get("url")), str(n.get("rationale")),
+                                            display=str(n.get("display") or ""),
+                                            bearer_token_env=str(n.get("bearer_token_env") or ""),
+                                            bearer_token_keyring=str(n.get("bearer_token_keyring") or ""),
+                                            parent=parent, for_project=for_project)
+                    out.append({"proposal": c.id, "kind": "plugin", "name": str((c.plugin or {}).get("name"))})
+                staged.append(c)
+        except ProposalError as ex:
+            for c in staged:
+                self._discard(c.id)
+            raise ProposalError(f"need could not be staged: {ex}")
+        return out
+
+    def _discard(self, pid: str) -> None:
+        for suffix in (".yaml", ".json", ".plan.md", ".testing.md"):
+            try:
+                (self._dir / f"{pid}{suffix}").unlink()
+            except FileNotFoundError:
+                pass
+
+    @staticmethod
+    def _project_effect(name, title, workspace, downloads, needs, kind, changes=None) -> Dict[str, Any]:
+        eff: Dict[str, Any] = {
+            "tool": f"{kind}: {name}",
+            "kind": kind,
+            "title": title,
+            "workspace": workspace or None,
+            "downloads": downloads,
+            "needs": needs,
+            "executes_a_binary": False,
+            "parameters": [],
+            "review_note": (
+                "Approving agrees to the plan, the one directory it may touch and the "
+                "sites it may fetch from - nothing else. Every need listed is its own "
+                "proposal, reviewed and switched on separately; this approves none of them."
+                if kind == "project" else
+                "Approving changes an agreed project. Read the diff: what was added is "
+                "what you are saying yes to. Needs added here are their own proposals, "
+                "reviewed and switched on separately."
+            ),
+        }
+        if downloads:
+            eff["review_note"] = (
+                f"DOWNLOADS: {len(downloads)} site(s) would be allowed. Read each one and its "
+                "purpose. " + eff["review_note"]
+            )
+        if changes is not None:
+            eff["changes"] = changes
+        return eff
 
     def _check_plugin_url(self, url: str) -> str:
         from urllib.parse import urlsplit
@@ -478,6 +731,10 @@ class ProposalStore:
         p = self._require(pid, "pending")
         if p.kind == "plugin":
             return self._approve_plugin(p)
+        if p.kind == "project":
+            return self._approve_project(p)
+        if p.kind == "revision":
+            return self._approve_revision(p)
 
         # RE-CHECK the collision. A proposal can sit in review for days while
         # the live surface moves under it - a reload could have added the very
@@ -530,12 +787,268 @@ class ProposalStore:
         self._write_record(p)
         return p
 
+    def _approve_project(self, p: Proposal) -> Proposal:
+        name = str((p.project or {}).get("name") or "")
+        if not name:
+            raise ProposalError(f"proposal '{p.id}' names no project.")
+        # RE-CHECK: a project of this name may have been approved from another
+        # proposal while this one waited.
+        if name in self._live_projects():
+            raise ProposalError(
+                f"can't approve: a project named '{name}' was approved while this "
+                "proposal was in review. Reject it and have the proposer rename, "
+                "or revise the live one."
+            )
+        home = self._projects_dir / name
+        if home.exists():
+            raise ProposalError(f"{home} already exists.")
+        home.mkdir(parents=True, exist_ok=False)
+        # MOVE, not regenerate: the bytes reviewed are the bytes agreed.
+        shutil.move(str(self._dir / f"{p.id}.yaml"), str(home / "project.yaml"))
+        shutil.move(str(self._dir / f"{p.id}.plan.md"), str(home / "plan.md"))
+        testing = self._dir / f"{p.id}.testing.md"
+        if testing.is_file():
+            shutil.move(str(testing), str(home / "testing.md"))
+        else:
+            (home / "testing.md").write_text("", encoding="utf-8")
+        p.status = "approved"
+        p.reviewed_at = time.time()
+        p.installed_as = f"{self._projects_dir.name}/{name}/"
+        self._write_record(p)
+        self._append_history(home, {"proposal": p.id, "kind": "project", "at": p.reviewed_at,
+                                    "note": "agreed"})
+        return p
+
+    def _approve_revision(self, p: Proposal) -> Proposal:
+        name = str((p.revision or {}).get("project") or "")
+        home = self._projects_dir / name
+        if not name or not (home / "project.yaml").is_file():
+            raise ProposalError(
+                f"can't approve: project '{name}' is no longer there to revise."
+            )
+        # The reviewed yaml replaces the live contract; the previous one is
+        # kept beside it so the chain can be read back.
+        stamp = int(time.time())
+        shutil.copy2(str(home / "project.yaml"), str(home / f"project.{stamp}.yaml"))
+        shutil.move(str(self._dir / f"{p.id}.yaml"), str(home / "project.yaml"))
+        for part in ("plan", "testing"):
+            src = self._dir / f"{p.id}.{part}.md"
+            if src.is_file():
+                shutil.copy2(str(home / f"{part}.md"), str(home / f"{part}.{stamp}.md"))
+                shutil.move(str(src), str(home / f"{part}.md"))
+        p.status = "approved"
+        p.reviewed_at = time.time()
+        p.installed_as = f"{self._projects_dir.name}/{name}/"
+        self._write_record(p)
+        self._append_history(home, {"proposal": p.id, "kind": "revision", "at": p.reviewed_at,
+                                    "note": (p.revision or {}).get("note"),
+                                    "changes": (p.revision or {}).get("changes")})
+        # A revision against a DONE project reopens it; otherwise the work
+        # carries on under the new limits and the status is left alone.
+        state = self._read_state(home)
+        if state.get("status") == "done":
+            self._write_state(home, {"status": "in_progress", "since": p.reviewed_at,
+                                     "done_requested": False, "reopened_by": p.id})
+            self._append_journal(home, {"at": p.reviewed_at, "by": "workbench",
+                                        "text": f"Reopened: revision {p.id} agreed after the project was done. "
+                                                f"{(p.revision or {}).get('note') or ''}".strip(),
+                                        "files": [], "commit": "", "status": "in_progress"})
+        return p
+
+    # ── Life after approval ────────────────────────────────────────────
+
+    def _read_state(self, home: Path) -> Dict[str, Any]:
+        f = home / "state.json"
+        try:
+            if f.is_file():
+                return json.loads(f.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+        return {"status": "agreed", "since": None, "done_requested": False}
+
+    def _write_state(self, home: Path, state: Dict[str, Any]) -> None:
+        (home / "state.json").write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+    def _read_journal(self, home: Path) -> List[Dict[str, Any]]:
+        f = home / "journal.json"
+        try:
+            if f.is_file():
+                return json.loads(f.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+        return []
+
+    def _append_journal(self, home: Path, entry: Dict[str, Any]) -> Dict[str, Any]:
+        journal = self._read_journal(home)
+        entry = {"id": len(journal) + 1, **entry}
+        journal.append(entry)
+        tmp = home / ".journal.json.tmp"
+        tmp.write_text(json.dumps(journal, indent=2), encoding="utf-8")
+        os.replace(tmp, home / "journal.json")
+        return entry
+
+    def _home(self, name: str) -> Path:
+        try:
+            name = _proj.check_name(name)
+        except _proj.ProjectError as ex:
+            raise ProposalError(str(ex))
+        home = self._projects_dir / name
+        if not (home / "project.yaml").is_file():
+            raise ProposalError(f"no approved project named '{name}'.")
+        return home
+
+    def log(self, name: str, text: str, files: Optional[List[Any]] = None,
+            commit: str = "", status: Optional[str] = None) -> Dict[str, Any]:
+        """The model's journal entry: what it did, which files (relative to
+        the workspace), an optional commit, an optional status move. `done`
+        is recorded as a request for the operator to confirm."""
+        home = self._home(name)
+        try:
+            text = _proj.check_entry(text)
+            files = _proj.check_files(files)
+            commit = _proj.check_commit(commit)
+            want = _proj.check_status_request(status)
+        except _proj.ProjectError as ex:
+            raise ProposalError(str(ex))
+        state = self._read_state(home)
+        now = time.time()
+        if want == "done":
+            state["done_requested"] = True
+            state["done_requested_at"] = now
+            if state.get("status") == "agreed":
+                state["status"] = "in_progress"; state["since"] = now
+        elif want is not None:
+            if state.get("status") == "done":
+                raise ProposalError(
+                    f"'{name}' is done. A done project reopens only through an approved "
+                    "revision; propose one saying what turned out to be unfinished."
+                )
+            if state.get("status") != want:
+                state["status"] = want; state["since"] = now
+        elif state.get("status") == "agreed":
+            # Writing the first entry is starting the work.
+            state["status"] = "in_progress"; state["since"] = now
+        self._write_state(home, state)
+        entry = self._append_journal(home, {"at": now, "by": "model", "text": text, "files": files,
+                                            "commit": commit or "",
+                                            "status": state.get("status"),
+                                            **({"asks": "done"} if want == "done" else {})})
+        return {"entry": entry, "state": state}
+
+    def confirm_done(self, name: str, note: str = "") -> Dict[str, Any]:
+        """Operator: the plan's 'what done looks like' was met."""
+        home = self._home(name)
+        state = self._read_state(home)
+        now = time.time()
+        state.update({"status": "done", "since": now, "done_requested": False, "done_at": now})
+        self._write_state(home, state)
+        self._append_journal(home, {"at": now, "by": "operator", "text": f"Done. {note}".strip(),
+                                    "files": [], "commit": "", "status": "done"})
+        return state
+
+    def set_status(self, name: str, status: str, note: str = "") -> Dict[str, Any]:
+        """Operator: pause, resume or reopen by hand. Done goes through confirm_done."""
+        home = self._home(name)
+        status = (status or "").strip().lower()
+        if status not in ("agreed", "in_progress", "paused"):
+            raise ProposalError("status must be agreed, in_progress or paused; done is confirm_done.")
+        state = self._read_state(home)
+        now = time.time()
+        reopened = state.get("status") == "done"
+        state.update({"status": status, "since": now, "done_requested": False})
+        self._write_state(home, state)
+        self._append_journal(home, {"at": now, "by": "operator",
+                                    "text": f"{'Reopened' if reopened else 'Status'}: {status}. {note}".strip(),
+                                    "files": [], "commit": "", "status": status})
+        return state
+
+    @staticmethod
+    def _append_history(home: Path, entry: Dict[str, Any]) -> None:
+        path = home / "history.json"
+        try:
+            hist = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else []
+        except Exception:
+            hist = []
+        hist.append(entry)
+        path.write_text(json.dumps(hist, indent=2), encoding="utf-8")
+
+    # ── Read: projects ─────────────────────────────────────────────────
+
+    def _live_projects(self) -> set[str]:
+        if not self._projects_dir.is_dir():
+            return set()
+        return {d.name for d in self._projects_dir.iterdir()
+                if d.is_dir() and (d / "project.yaml").is_file()}
+
+    def _pending_projects(self) -> set[str]:
+        return {str(p.project.get("name")) for p in self.list("pending") if p.kind == "project" and p.project}
+
+    def project(self, name: str) -> Optional[Dict[str, Any]]:
+        """An approved project: its contract, plan, testing notes, history,
+        and the status of each need right now."""
+        try:
+            name = _proj.check_name(name)
+        except _proj.ProjectError:
+            return None
+        home = self._projects_dir / name
+        if not (home / "project.yaml").is_file():
+            return None
+        try:
+            contract = _proj.parse_contract((home / "project.yaml").read_text(encoding="utf-8"))
+        except _proj.ProjectError:
+            return None
+        def _read(fn: str) -> str:
+            f = home / fn
+            return f.read_text(encoding="utf-8") if f.is_file() else ""
+        hist_f = home / "history.json"
+        try:
+            history = json.loads(hist_f.read_text(encoding="utf-8")) if hist_f.is_file() else []
+        except Exception:
+            history = []
+        needs_status = {}
+        for n in contract.get("needs") or []:
+            c = self.get(str(n.get("proposal")))
+            needs_status[str(n.get("proposal"))] = c.status if c else "missing"
+        journal = self._read_journal(home)
+        return {
+            "name": name,
+            "contract": contract,
+            "plan": _read("plan.md"),
+            "testing": _read("testing.md"),
+            "history": history,
+            "grants": _proj.grants(contract, needs_status),
+            "home": str(home),
+            "state": self._read_state(home),
+            "journal": journal,
+            "files_touched": _proj.files_touched(journal),
+        }
+
+    def projects(self) -> List[Dict[str, Any]]:
+        out = []
+        for name in sorted(self._live_projects()):
+            p = self.project(name)
+            if p is not None:
+                out.append(p)
+        return out
+
+    def project_texts(self, pid: str) -> Dict[str, str]:
+        """The plan and testing notes staged with a project or revision
+        proposal, for the reviewer. Empty strings when not staged."""
+        out = {}
+        for part in ("plan", "testing"):
+            f = self._dir / f"{pid}.{part}.md"
+            out[part] = f.read_text(encoding="utf-8") if f.is_file() else ""
+        return out
+
     def plugin_file(self, p: Proposal) -> Optional[Path]:
         """Where an approved plugin proposal was installed."""
         name = str((p.plugin or {}).get("name") or "")
         return self._plugins_dir / f"{name}.yaml" if p.kind == "plugin" and name else None
 
-    def reject(self, pid: str, critique: str) -> Proposal:
+    def reject(self, pid: str, critique: str, final: bool = False) -> Proposal:
+        """Refuse a pending proposal. `final` closes it for good: the chain
+        cannot be superseded and the names it asked for are refused at
+        propose time, with this critique, until the record is removed."""
         if not critique or not critique.strip():
             raise ProposalError(
                 "a critique is required. A bare 'no' gives the proposer "
@@ -545,7 +1058,20 @@ class ProposalStore:
         p.status = "rejected"
         p.reviewed_at = time.time()
         p.critique = critique.strip()
+        p.final = bool(final)
         self._write_record(p)
+        # A need exists only for the project or revision that staged it.
+        # Rejecting the parent rejects its pending children with the same
+        # critique - not permanently, since the same tool may be wanted
+        # honestly by a later project - so a revised project can stage them
+        # again rather than colliding with its own orphans.
+        if p.kind in ("project", "revision"):
+            for c in self.list("pending"):
+                if c.parent == p.id:
+                    c.status = "rejected"
+                    c.reviewed_at = p.reviewed_at
+                    c.critique = f"(with {p.kind} {p.id}) {p.critique}"
+                    self._write_record(c)
         return p
 
     # ── Read ───────────────────────────────────────────────────────────
@@ -584,6 +1110,48 @@ class ProposalStore:
 
     def _pending_names(self) -> set[str]:
         return {n for p in self.list("pending") for n in p.tool_names}
+
+    def _prior(self, supersedes: Optional[str]) -> Optional[Proposal]:
+        """The proposal a revision cites, checked: it must exist, and it must
+        not have been closed for good."""
+        if not supersedes:
+            return None
+        prior = self.get(supersedes)
+        if prior is None:
+            raise ProposalError(f"proposal '{supersedes}' not found to supersede.")
+        if prior.final:
+            raise ProposalError(
+                f"proposal '{supersedes}' was rejected permanently and cannot be "
+                f"revised. The critique: {prior.critique}"
+            )
+        return prior
+
+    def _closed(self) -> List[Proposal]:
+        return [p for p in self.list("rejected") if p.final]
+
+    def _refuse_if_closed(self, names: List[str], kind: str) -> None:
+        """A permanently rejected proposal keeps its names. Asking again under
+        the same name, with or without `supersedes`, gets the same answer
+        and the same critique - the reviewer said 'not at all', not 'not
+        like this'."""
+        for p in self._closed():
+            if p.kind == "tool":
+                held = set(p.tool_names)
+            elif p.kind == "plugin":
+                held = {str((p.plugin or {}).get("name"))} if p.plugin else set()
+            elif p.kind == "project":
+                held = {str((p.project or {}).get("name"))} if p.project else set()
+            else:
+                held = {str((p.revision or {}).get("project"))} if p.revision else set()
+            if p.kind != kind:
+                continue
+            hit = sorted(set(names) & held)
+            if hit:
+                what = kind
+                raise ProposalError(
+                    f"{what} '{hit[0]}' was rejected permanently in {p.id} and "
+                    f"may not be proposed again. The critique: {p.critique}"
+                )
 
     def _pending_plugins(self) -> set[str]:
         return {str(p.plugin.get("name")) for p in self.list("pending") if p.kind == "plugin" and p.plugin}

@@ -365,6 +365,64 @@ table.params td.pdesc { color: var(--text-soft); }
 .btn-approve { border: 1px solid #2e7d5b; }
 .btn-reject  { border: 1px solid #a4453a; }
 .prop-detail { margin-top: .6rem; }
+
+/* The reject form. Native <dialog> so Esc, focus trapping and the
+   backdrop come for free; the styling just makes it look like it lives here. */
+.dialog {
+  background: var(--bg-soft, var(--bg)); color: var(--text, inherit);
+  border: 1px solid var(--border); border-radius: var(--radius, 6px);
+  padding: 0; min-width: min(480px, 92vw); max-width: 92vw;
+}
+.dialog::backdrop { background: rgba(0,0,0,0.55); }
+.dialog form { display: flex; flex-direction: column; gap: .7rem; padding: 14px 16px 16px; }
+.dialog-head { display: flex; align-items: center; justify-content: space-between; }
+.dialog-title { font-weight: 600; }
+.dialog-x { background: none; border: none; color: var(--text-mute); cursor: pointer; font-size: 1em; }
+.dialog-x:hover { color: var(--err); }
+.dialog-sub { font-family: var(--mono); font-size: .78em; color: var(--text-mute); }
+.dialog textarea {
+  width: 100%; box-sizing: border-box; resize: vertical; font: inherit;
+  background: var(--bg); color: inherit; border: 1px solid var(--border);
+  border-radius: 4px; padding: .5rem .6rem;
+}
+.dialog-check { display: grid; grid-template-columns: auto 1fr; column-gap: .5rem; align-items: start; font-size: .9em; }
+.dialog-check input { margin-top: .2em; }
+.dialog-check .hint { grid-column: 2; font-size: .82em; color: var(--text-mute); line-height: 1.4; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: .5rem; }
+.dialog-wide { min-width: min(760px, 94vw); max-width: 94vw; padding: 14px 16px 16px; }
+.dialog-wide .dialog-head { margin-bottom: .3rem; }
+.plan-tabs { display: flex; gap: .4rem; margin: .6rem 0; }
+.plan-tabs button { cursor: pointer; padding: .25rem .6rem; border-radius: 4px; border: 1px solid var(--border); background: none; color: var(--text-mute); }
+.plan-tabs button.on { color: var(--accent); border-color: var(--accent); }
+.plan-body { max-height: 70vh; overflow: auto; padding-right: .4rem; }
+.plan-body .md h1, .plan-body .md h2, .plan-body .md h3 { margin: .9em 0 .4em; line-height: 1.25; }
+.plan-body .md h1 { font-size: 1.3em; } .plan-body .md h2 { font-size: 1.15em; } .plan-body .md h3 { font-size: 1.02em; }
+.plan-body .md p, .plan-body .md ul, .plan-body .md ol { margin: .45em 0; line-height: 1.5; }
+.plan-body .md ul, .plan-body .md ol { padding-left: 1.4em; }
+.plan-body .md code { font-family: var(--mono); font-size: .9em; }
+.plan-body .md pre { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: .6rem; overflow: auto; }
+.plan-body .md blockquote { border-left: 2px solid var(--accent); margin: .5em 0; padding: .1em .8em; color: var(--text-mute); }
+.plan-body .md a { color: var(--accent-2, var(--accent)); text-decoration: underline; }
+.plan-body .md hr { border: 0; border-top: 1px solid var(--border); margin: .8em 0; }
+/* Project cards: the grants are the review, so they sit in the card body. */
+.grants { margin: .5rem 0; padding: .5rem .6rem; border-left: 2px solid var(--accent); font-size: .9em; }
+.grants > div { margin: .25rem 0; }
+.grant-list { margin: .2rem 0 .2rem 1.2rem; padding: 0; }
+.grant-list li { margin: .15rem 0; }
+.prop-nested { margin-left: 1.6rem; border-left: 2px solid var(--border); }
+/* The plan button sits OUTSIDE the detail box: loading the contract rewrites
+   that box, and the plan must not vanish when the contract appears. */
+.prop-plan { margin-top: .6rem; display: flex; gap: .5rem; }
+/* The journal: the model's own entries, newest first. */
+.journal { margin-top: .6rem; }
+.journal .entry { margin: .5rem 0; padding: .5rem .7rem; border-left: 2px solid var(--border); }
+.journal .entry.operator { border-left-color: var(--ok); }
+.journal .entry.workbench { border-left-color: var(--warn); }
+.journal .entry-head { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-bottom: .3rem; }
+.journal .entry .md p { margin: .3em 0; line-height: 1.45; }
+.journal .entry-files { margin-top: .3rem; font-size: .85em; display: flex; flex-wrap: wrap; gap: .3rem; }
+.badge.warn { color: var(--warn); border-color: var(--warn); }
+.dialog-actions button { cursor: pointer; padding: .35rem .8rem; border-radius: 4px; }
 .effect { margin: .5rem 0; padding: .5rem .6rem; border-left: 2px solid var(--accent, #e06c5a); }
 .eff-head { margin-bottom: .35rem; }
 /* The argv is the thing being approved. Give it room and let it wrap

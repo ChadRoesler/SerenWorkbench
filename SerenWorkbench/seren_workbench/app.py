@@ -85,9 +85,15 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
         from .models.tools.proposal_tools import (
             PROPOSE_TOOL_DEF, PROPOSE_PLUGIN_TOOL_DEF, LIST_PROPOSALS_TOOL_DEF,
         )
+        from .models.tools.project_tools import (
+            PROPOSE_PROJECT_TOOL_DEF, PROPOSE_REVISION_TOOL_DEF, LIST_PROJECTS_TOOL_DEF,
+            PROJECT_LOG_TOOL_DEF,
+        )
         proposal_tool_names = {
             PROPOSE_TOOL_DEF["name"], PROPOSE_PLUGIN_TOOL_DEF["name"],
             LIST_PROPOSALS_TOOL_DEF["name"],
+            PROPOSE_PROJECT_TOOL_DEF["name"], PROPOSE_REVISION_TOOL_DEF["name"],
+            LIST_PROJECTS_TOOL_DEF["name"], PROJECT_LOG_TOOL_DEF["name"],
         }
 
         app.state.tool_registry = build_registry(

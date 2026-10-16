@@ -5,6 +5,11 @@ GET  /proposals                 list, newest first
 GET  /proposals/{id}            one, including the full manifest text
 POST /proposals/{id}/approve    install it and reload the live surface
 POST /proposals/{id}/reject     refuse it, with a critique the proposer reads
+GET  /projects                  the projects agreed so far, with their grants
+GET  /projects/{name}           one, with its plan, testing notes and history
+GET  /projects/{name}/grants    the contract as a harness consumes it
+POST /projects/{name}/done      operator: confirm the plan's "done" was met
+POST /projects/{name}/status    operator: {status: agreed|in_progress|paused}, a reopen by hand
 
 THE ASYMMETRY IS THE POINT. The model can write a proposal and read its own
 proposals. It cannot approve one. There is no MCP tool behind any route in
@@ -65,10 +70,18 @@ async def get_proposal(request: Request, pid: str):
     tool would actually run, because a friendly description is not what you
     should be approving on.
     """
-    p = _store(request).get(pid)
+    store = _store(request)
+    p = store.get(pid)
     if p is None:
         raise HTTPException(status_code=404, detail=f"no proposal '{pid}'")
-    return _public(p, include_manifest=True)
+    out = _public(p, include_manifest=True)
+    if p.kind in ("project", "revision"):
+        # The plan is the thing being agreed to; it travels with the record
+        # so the viewer renders it rather than asking the reviewer to go
+        # and find a file.
+        out["texts"] = store.project_texts(pid)
+        out["children"] = [_public(c) for c in store.list() if c.parent == pid]
+    return out
 
 
 @router.post("/proposals/{pid}/approve")
@@ -93,6 +106,26 @@ async def approve_proposal(request: Request, pid: str):
 
     if p.kind == "plugin":
         return await _plug_in(request, store, p)
+    if p.kind in ("project", "revision"):
+        # Nothing to reload: a project is a contract on disk, not a tool.
+        name = (p.project or p.revision or {}).get("name") or (p.revision or {}).get("project")
+        live = store.project(str(name)) if name else None
+        pending = [n for n in (live or {}).get("grants", {}).get("needs", [])
+                   if n.get("status") == "pending"]
+        return {
+            "ok": True,
+            "proposal": _public(p),
+            "installed_as": p.installed_as,
+            "installed": True,
+            "enabled": False,
+            "project": (live or {}).get("grants"),
+            "next_step": (
+                f"Agreed. The contract is at {p.installed_as}. "
+                + (f"{len(pending)} need(s) still wait for their own review in this queue. "
+                   if pending else "")
+                + "Nothing was switched on."
+            ),
+        }
 
     reload_result = None
     reg = getattr(request.app.state, "dynamic_registry", None)
@@ -129,6 +162,57 @@ async def approve_proposal(request: Request, pid: str):
             "(disabled) after a restart."
         ),
     }
+
+
+@router.get("/projects")
+async def list_projects(request: Request):
+    """Every agreed project, with its grants. The list a harness reads to
+    know where work may happen and what it may fetch."""
+    items = _store(request).projects()
+    return {"count": len(items),
+            "projects": [{**x["grants"], "state": x["state"],
+                          "journal_count": len(x["journal"]),
+                          "last_entry": (x["journal"][-1] if x["journal"] else None),
+                          "files_touched": x["files_touched"]} for x in items]}
+
+
+@router.post("/projects/{name}/done")
+async def confirm_project_done(request: Request, name: str):
+    """Operator only. The model may ASK for done (project_log with status
+    done); the person who checked the result says it is."""
+    body = await request.json() if int(request.headers.get("content-length") or 0) else {}
+    try:
+        state = _store(request).confirm_done(name, str((body or {}).get("note") or ""))
+    except ProposalError as ex:
+        return JSONResponse({"ok": False, "error": str(ex)}, status_code=409)
+    return {"ok": True, "state": state}
+
+
+@router.post("/projects/{name}/status")
+async def set_project_status(request: Request, name: str):
+    body = await request.json()
+    try:
+        state = _store(request).set_status(name, str(body.get("status") or ""),
+                                           str(body.get("note") or ""))
+    except ProposalError as ex:
+        return JSONResponse({"ok": False, "error": str(ex)}, status_code=409)
+    return {"ok": True, "state": state}
+
+
+@router.get("/projects/{name}")
+async def get_project(request: Request, name: str):
+    p = _store(request).project(name)
+    if p is None:
+        raise HTTPException(status_code=404, detail=f"no project '{name}'")
+    return p
+
+
+@router.get("/projects/{name}/grants")
+async def get_project_grants(request: Request, name: str):
+    p = _store(request).project(name)
+    if p is None:
+        raise HTTPException(status_code=404, detail=f"no project '{name}'")
+    return p["grants"]
 
 
 async def _plug_in(request: Request, store, p) -> dict:
@@ -178,15 +262,20 @@ async def _plug_in(request: Request, store, p) -> dict:
 async def reject_proposal(request: Request, pid: str):
     """Refuse a proposal, with a critique.
 
-    Body: {"critique": "..."} — required, and the store enforces it. A bare
-    refusal gives the proposer nothing to revise against, which turns a
-    review loop into a wall. This mirrors the consolidator's
-    reject-with-critique exactly.
+    Body: {"critique": "...", "final": false} — the critique is required,
+    and the store enforces it. A bare refusal gives the proposer nothing to
+    revise against, which turns a review loop into a wall. This mirrors the
+    consolidator's reject-with-critique exactly.
+
+    `final` is "not at all" rather than "not like this": the chain cannot
+    be superseded, and the names it asked for are refused at propose time
+    with this critique attached.
     """
     body = await request.json()
     critique = str(body.get("critique") or "")
+    final = bool(body.get("final", False))
     try:
-        p = _store(request).reject(pid, critique)
+        p = _store(request).reject(pid, critique, final=final)
     except ProposalError as ex:
         return JSONResponse({"ok": False, "error": str(ex)}, status_code=409)
     return {"ok": True, "proposal": _public(p)}

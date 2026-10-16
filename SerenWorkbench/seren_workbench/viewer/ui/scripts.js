@@ -380,6 +380,7 @@ async function refreshProposals() {
   }
 }
 document.getElementById("proposals-status")?.addEventListener("change", refreshProposals);
+document.getElementById("proposals-kind")?.addEventListener("change", renderProposals);
 
 function renderProposals() {
   const body = document.getElementById("proposals-body");
@@ -389,7 +390,21 @@ function renderProposals() {
       proposed</div>`;
     return;
   }
-  body.innerHTML = PROPOSALS.map(proposalCardHtml).join("");
+  const kind = document.getElementById("proposals-kind")?.value ?? "";
+  // A need staged by a project is shown under its parent when the parent is
+  // in the list, so the family reads as one thing; on its own otherwise.
+  const shownIds = new Set(PROPOSALS.map(p => p.id));
+  const top = PROPOSALS.filter(p => !(p.parent && shownIds.has(p.parent)))
+                       .filter(p => !kind || (p.kind || "tool") === kind);
+  if (top.length === 0) {
+    body.innerHTML = `<div class="empty">nothing of that kind here</div>`;
+    return;
+  }
+  body.innerHTML = top.map(p => proposalCardHtml(p) +
+    PROPOSALS.filter(c => c.parent === p.id).map(c => proposalCardHtml(c, true)).join("")
+  ).join("");
+  body.querySelectorAll("[data-plan]").forEach(b =>
+    b.addEventListener("click", () => showPlan(b.dataset.plan)));
   body.querySelectorAll(".prop-head").forEach(h =>
     h.addEventListener("click", () => h.parentElement.classList.toggle("expanded")));
   body.querySelectorAll("[data-approve]").forEach(b =>
@@ -400,36 +415,162 @@ function renderProposals() {
     b.addEventListener("click", () => loadDetail(b.dataset.detail)));
 }
 
-function proposalCardHtml(p) {
+function proposalCardHtml(p, nested = false) {
   const cls = { pending: "kind", approved: "ok", rejected: "err",
                 superseded: "disabled" }[p.status] || "kind";
+  const kind = p.kind || "tool";
+  const kindBadge = kind !== "tool" ? `<span class="badge kind">${escapeHtml(kind)}</span>` : "";
+  const family = p.for_project && !nested
+    ? `<span class="badge disabled">for ${escapeHtml(p.for_project)}</span>` : "";
   const attempt = p.attempt > 1 ? `<span class="badge kind">attempt ${p.attempt}</span>` : "";
+  const final = p.final ? `<span class="badge err">permanent</span>` : "";
   const critique = p.critique
-    ? `<div class="note err"><span class="label">your critique:</span>
+    ? `<div class="note err"><span class="label">your critique${p.final ? " (final)" : ""}:</span>
          ${escapeHtml(p.critique)}</div>` : "";
+  const approveLabel = kind === "project" ? "approve → agree to the plan and limits"
+                     : kind === "revision" ? "approve → apply this change"
+                     : "approve → install (disabled)";
   const controls = p.status === "pending" ? `
       <div class="prop-actions">
-        <button class="btn-approve" data-approve="${escapeHtml(p.id)}">approve → install (disabled)</button>
+        <button class="btn-approve" data-approve="${escapeHtml(p.id)}">${approveLabel}</button>
         <button class="btn-reject" data-reject="${escapeHtml(p.id)}">reject with critique</button>
       </div>` : "";
+  const detailLabel = kind === "project" || kind === "revision"
+    ? "show the contract ▾" : "show what it would run ▾";
+  const planBtn = (kind === "project" || kind === "revision")
+    ? `<button data-plan="${escapeHtml(p.id)}">read the plan</button>` : "";
+  const contract = kind === "project" ? projectSummaryHtml(p.project || {})
+                 : kind === "revision" ? revisionSummaryHtml(p.revision || {}) : "";
   return `
-    <div class="tool-card prop-card" id="card-${escapeHtml(p.id)}">
+    <div class="tool-card prop-card${nested ? " prop-nested" : ""}" id="card-${escapeHtml(p.id)}">
       <div class="card-head prop-head">
         <span class="caret">▸</span>
         <span class="name">${escapeHtml(p.title || (p.tool_names || []).join(", ") || "(unnamed)")}</span>
         <span class="badge ${cls}">${escapeHtml(p.status)}</span>
-        ${attempt}
+        ${kindBadge}${family}${attempt}${final}
         <span class="src">${escapeHtml(p.id)}</span>
       </div>
       <div class="card-body">
         <div class="desc"><span class="label">why:</span> ${escapeHtml(p.rationale || "")}</div>
+        ${contract}
         ${critique}
+        ${planBtn ? `<div class="prop-plan">${planBtn}</div>` : ""}
         <div class="prop-detail" id="detail-${escapeHtml(p.id)}">
-          <button data-detail="${escapeHtml(p.id)}">show what it would run ▾</button>
+          <button data-detail="${escapeHtml(p.id)}">${detailLabel}</button>
         </div>
         ${controls}
       </div>
     </div>`;
+}
+
+// What a project asks for, at a glance - the limits are the review.
+function projectSummaryHtml(pr) {
+  const dl = (pr.downloads || []).length
+    ? `<ul class="grant-list">${(pr.downloads || []).map(d =>
+        `<li><code>${escapeHtml(d.url)}</code> <span class="ptype">${escapeHtml(d.purpose || "")}</span></li>`).join("")}</ul>`
+    : `<span class="ptype">fetches nothing</span>`;
+  const needs = (pr.needs || []).length
+    ? (pr.needs || []).map(n => {
+        const c = PROPOSALS.find(x => x.id === n.proposal);
+        const st = c ? c.status : "?";
+        const cls = { pending: "kind", approved: "ok", rejected: "err" }[st] || "disabled";
+        return `<li><code>${escapeHtml(n.name || n.proposal)}</code>
+          <span class="badge kind">${escapeHtml(n.kind || "")}</span>
+          <span class="badge ${cls}">${escapeHtml(st)}</span></li>`; }).join("")
+    : "";
+  return `<div class="grants">
+    <div><span class="label">workspace:</span> ${pr.workspace ? `<code>${escapeHtml(pr.workspace)}</code>` : `<span class="ptype">none</span>`}</div>
+    <div><span class="label">may fetch from:</span> ${dl}</div>
+    <div><span class="label">needs:</span> ${needs ? `<ul class="grant-list">${needs}</ul>` : `<span class="ptype">nothing beyond what exists</span>`}</div>
+  </div>`;
+}
+
+function revisionSummaryHtml(rv) {
+  const ch = rv.changes || {};
+  const rows = [];
+  if (ch.workspace) rows.push(`workspace: <code>${escapeHtml(ch.workspace.from || "none")}</code> → <code>${escapeHtml(ch.workspace.to || "none")}</code>`);
+  if (ch.title) rows.push(`title: ${escapeHtml(ch.title.from || "")} → ${escapeHtml(ch.title.to || "")}`);
+  (ch.downloads_added || []).forEach(d => rows.push(`<span class="badge ok">+ site</span> <code>${escapeHtml(d.url)}</code> <span class="ptype">${escapeHtml(d.purpose || "")}</span>`));
+  (ch.downloads_removed || []).forEach(d => rows.push(`<span class="badge err">− site</span> <code>${escapeHtml(d.url)}</code>`));
+  (ch.needs_added || []).forEach(n => rows.push(`<span class="badge ok">+ need</span> <code>${escapeHtml(n.name || n.proposal)}</code> <span class="badge kind">${escapeHtml(n.kind || "")}</span>`));
+  (ch.needs_removed || []).forEach(n => rows.push(`<span class="badge err">− need</span> <code>${escapeHtml(n.name || n.proposal)}</code>`));
+  if (ch.plan_changed) rows.push(`plan rewritten`);
+  if (ch.testing_changed) rows.push(`testing notes rewritten`);
+  return `<div class="grants">
+    <div><span class="label">against:</span> <code>${escapeHtml(rv.project || "")}</code></div>
+    <div><span class="label">changes:</span> ${rows.length
+      ? `<ul class="grant-list">${rows.map(r => `<li>${r}</li>`).join("")}</ul>`
+      : `<span class="ptype">nothing - a revision that changes nothing</span>`}</div>
+  </div>`;
+}
+
+// ── A small, safe Markdown renderer ──────────────────────────────────
+// Everything is HTML-escaped FIRST, then a handful of block and inline
+// forms are recognised on the escaped text. No raw HTML, no javascript:
+// links. It is enough to read a plan; it is not a Markdown engine.
+function renderMarkdown(md) {
+  const esc = escapeHtml(md || "");
+  const lines = esc.split(/\r?\n/);
+  const out = [];
+  let i = 0;
+  const inline = s => s
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" rel="noopener noreferrer" target="_blank">$1</a>');
+  while (i < lines.length) {
+    const ln = lines[i];
+    if (/^```/.test(ln)) {
+      const buf = []; i++;
+      while (i < lines.length && !/^```/.test(lines[i])) buf.push(lines[i++]);
+      i++; out.push(`<pre><code>${buf.join("\n")}</code></pre>`); continue;
+    }
+    const h = /^(#{1,6})\s+(.*)$/.exec(ln);
+    if (h) { out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`); i++; continue; }
+    if (/^\s*([-*+]|\d+\.)\s+/.test(ln)) {
+      const ordered = /^\s*\d+\./.test(ln); const items = [];
+      while (i < lines.length && /^\s*([-*+]|\d+\.)\s+/.test(lines[i]))
+        items.push(`<li>${inline(lines[i++].replace(/^\s*([-*+]|\d+\.)\s+/, ""))}</li>`);
+      out.push(`<${ordered ? "ol" : "ul"}>${items.join("")}</${ordered ? "ol" : "ul"}>`); continue;
+    }
+    if (/^\s*&gt;\s?/.test(ln)) {
+      const buf = [];
+      while (i < lines.length && /^\s*&gt;\s?/.test(lines[i])) buf.push(lines[i++].replace(/^\s*&gt;\s?/, ""));
+      out.push(`<blockquote>${inline(buf.join(" "))}</blockquote>`); continue;
+    }
+    if (/^\s*(-{3,}|\*{3,})\s*$/.test(ln)) { out.push("<hr>"); i++; continue; }
+    if (!ln.trim()) { i++; continue; }
+    const buf = [];
+    while (i < lines.length && lines[i].trim() && !/^(#{1,6}\s|```|\s*([-*+]|\d+\.)\s|\s*&gt;)/.test(lines[i]))
+      buf.push(lines[i++]);
+    out.push(`<p>${inline(buf.join(" "))}</p>`);
+  }
+  return out.join("\n");
+}
+
+let PLAN_TEXTS = { plan: "", testing: "", contract: "" };
+async function showPlan(pid) {
+  const dlg = document.getElementById("plan-dialog");
+  const body = document.getElementById("plan-body");
+  body.innerHTML = `<div class="loading">loading…</div>`;
+  document.getElementById("plan-dialog-sub").textContent = pid;
+  const close = () => dlg.close();
+  dlg.querySelectorAll("[data-plan-close]").forEach(b => b.onclick = close);
+  const show = part => {
+    dlg.querySelectorAll("[data-plan-part]").forEach(b => b.classList.toggle("on", b.dataset.planPart === part));
+    body.innerHTML = part === "contract"
+      ? `<pre>${escapeHtml(PLAN_TEXTS.contract || "")}</pre>`
+      : (PLAN_TEXTS[part] ? `<div class="md">${renderMarkdown(PLAN_TEXTS[part])}</div>`
+                          : `<div class="empty">nothing written here</div>`);
+  };
+  dlg.querySelectorAll("[data-plan-part]").forEach(b => b.onclick = () => show(b.dataset.planPart));
+  dlg.showModal();
+  try {
+    const p = await api(`/proposals/${encodeURIComponent(pid)}`);
+    PLAN_TEXTS = { plan: p.texts?.plan || "", testing: p.texts?.testing || "", contract: p.manifest || "" };
+    document.getElementById("plan-dialog-title").textContent = p.title || "Plan";
+    show("plan");
+  } catch (e) { showError(body, e); }
 }
 
 async function loadDetail(pid) {
@@ -441,9 +582,14 @@ async function loadDetail(pid) {
       const what = e.kind === "process"
         ? `<div class="eff-runs"><span class="label">runs:</span>
              <code>${escapeHtml((e.runs || []).join(" "))}</code></div>`
+        : (e.kind === "project" || e.kind === "revision")
+        ? `<div class="eff-runs"><span class="label">agrees to:</span>
+             workspace <code>${escapeHtml(e.workspace || "none")}</code>,
+             ${(e.downloads || []).length} download site(s), ${(e.needs || []).length} need(s)</div>`
         : `<div class="eff-runs"><span class="label">calls:</span>
              <code>${escapeHtml(e.calls || "")}</code></div>`;
-      const loud = (e.executes_a_binary || e.sends_credential || e.kind === "plugin")
+      const loud = (e.executes_a_binary || e.sends_credential || e.kind === "plugin"
+                    || e.kind === "project" || e.kind === "revision")
         ? `<div class="note err">${escapeHtml(e.review_note || "")}</div>` : "";
       const params = (e.parameters || []).map(x =>
         `<li><code>${escapeHtml(x.name)}</code> <span class="ptype">${escapeHtml(x.type)}</span>
@@ -463,14 +609,47 @@ async function loadDetail(pid) {
   } catch (e) { showError(host, e); }
 }
 
+// The reject form. Resolves to {critique, final} on submit, null on cancel.
+// A <dialog> rather than window.prompt: a critique is prose the proposer
+// revises against, and a one-line prompt invites a one-word "no".
+function askRejection(pid) {
+  const dlg = document.getElementById("reject-dialog");
+  const form = document.getElementById("reject-form");
+  const text = document.getElementById("reject-critique");
+  const finalBox = document.getElementById("reject-final");
+  const p = PROPOSALS.find(x => x.id === pid);
+  document.getElementById("reject-dialog-sub").textContent =
+    `${p?.title || (p?.tool_names || []).join(", ") || pid} · ${pid}`;
+  text.value = ""; finalBox.checked = false;
+  return new Promise(resolve => {
+    const done = v => { cleanup(); dlg.close(); resolve(v); };
+    const onSubmit = e => {
+      e.preventDefault();
+      const critique = text.value.trim();
+      if (!critique) { text.focus(); return; }   // `required` also blocks this
+      done({ critique, final: finalBox.checked });
+    };
+    const onCancel = () => done(null);
+    const cancels = dlg.querySelectorAll("[data-reject-cancel]");
+    const cleanup = () => {
+      form.removeEventListener("submit", onSubmit);
+      dlg.removeEventListener("cancel", onCancel);
+      cancels.forEach(b => b.removeEventListener("click", onCancel));
+    };
+    form.addEventListener("submit", onSubmit);
+    dlg.addEventListener("cancel", onCancel);     // Esc
+    cancels.forEach(b => b.addEventListener("click", onCancel));
+    dlg.showModal();
+    text.focus();
+  });
+}
+
 async function actOn(pid, action) {
   let bodyJson;
   if (action === "reject") {
-    const critique = window.prompt(
-      "Why are you rejecting this? The proposer reads this and revises against it.");
-    if (critique === null) return;              // cancelled
-    if (!critique.trim()) { window.alert("A critique is required."); return; }
-    bodyJson = JSON.stringify({ critique });
+    const answer = await askRejection(pid);
+    if (answer === null) return;                // cancelled
+    bodyJson = JSON.stringify(answer);          // {critique, final}
   }
   try {
     const data = await api(`/proposals/${encodeURIComponent(pid)}/${action}`, {
@@ -483,10 +662,191 @@ async function actOn(pid, action) {
   } catch (e) {
     window.alert("failed: " + (e.message || e));
   }
-  // An approval changes the tool list and the state list too.
+  // An approval changes the tool list and the state list too - and a
+  // project or revision approval lands in the cabinet.
   refreshProposals(); refreshSummary();
+  if (_loaded.projects) refreshProjects();
   if (_loaded.tools) refreshTools();
   if (_loaded.state) refreshState();
+}
+
+// ── Projects panel ───────────────────────────────────────────────
+// Life after approval. The queue says what was agreed; this says what has
+// happened inside it since. Journal entries are the model's own words.
+let PROJECTS = [];
+async function refreshProjects() {
+  const body = document.getElementById("projects-body");
+  if (!body) return;
+  setLoading(body);
+  try {
+    const data = await api("/projects");
+    PROJECTS = data.projects || [];
+    const asking = PROJECTS.filter(p => p.state?.done_requested).length;
+    document.getElementById("projects-info").textContent =
+      `${PROJECTS.length} agreed · ${PROJECTS.filter(p => p.state?.status === "in_progress").length} in progress` +
+      (asking ? ` · ${asking} asking for done` : "");
+    const pip = document.getElementById("projects-pip");
+    if (pip) { pip.textContent = String(asking); pip.hidden = asking === 0; }
+    renderProjects();
+  } catch (e) {
+    if (/503/.test(e.message || "")) {
+      body.className = "";
+      body.innerHTML = `<div class="empty">projects live behind tool proposals, which are disabled
+        (dashboard.proposals_enabled)</div>`;
+      return;
+    }
+    showError(body, e);
+  }
+}
+
+function renderProjects() {
+  const body = document.getElementById("projects-body");
+  body.className = "";
+  if (PROJECTS.length === 0) {
+    body.innerHTML = `<div class="empty">nothing agreed yet — approve a project in the queue
+      and it lands here</div>`;
+    return;
+  }
+  body.innerHTML = PROJECTS.map(projectCardHtml).join("");
+  body.querySelectorAll(".proj-head").forEach(h =>
+    h.addEventListener("click", () => h.parentElement.classList.toggle("expanded")));
+  body.querySelectorAll("[data-proj-plan]").forEach(b =>
+    b.addEventListener("click", () => showProjectPlan(b.dataset.projPlan)));
+  body.querySelectorAll("[data-proj-journal]").forEach(b =>
+    b.addEventListener("click", () => loadJournal(b.dataset.projJournal)));
+  body.querySelectorAll("[data-proj-done]").forEach(b =>
+    b.addEventListener("click", () => projectAct(b.dataset.projDone, "done")));
+  body.querySelectorAll("[data-proj-status]").forEach(b =>
+    b.addEventListener("click", () => projectAct(b.dataset.projStatus, b.dataset.to)));
+}
+
+const STATUS_CLS = { agreed: "disabled", in_progress: "kind", paused: "disabled", done: "ok" };
+function fmtWhen(ts) {
+  if (!ts) return "";
+  try { return new Date(ts * 1000).toLocaleString(); } catch { return ""; }
+}
+
+function projectCardHtml(p) {
+  const st = p.state?.status || "agreed";
+  const asking = p.state?.done_requested
+    ? `<span class="badge warn">asks: done</span>` : "";
+  const last = p.last_entry
+    ? `<div class="desc"><span class="label">last entry:</span>
+         <span class="ptype">${escapeHtml(fmtWhen(p.last_entry.at))}</span>
+         ${escapeHtml(p.last_entry.text.length > 240 ? p.last_entry.text.slice(0, 240) + "…" : p.last_entry.text)}</div>`
+    : `<div class="desc"><span class="ptype">no journal entries yet</span></div>`;
+  const files = (p.files_touched || []).length
+    ? `<div><span class="label">files touched:</span>
+         <ul class="grant-list">${p.files_touched.map(f => `<li><code>${escapeHtml(f)}</code></li>`).join("")}</ul></div>`
+    : "";
+  const dl = (p.downloads || []).length
+    ? `<ul class="grant-list">${p.downloads.map(d =>
+        `<li><code>${escapeHtml(d.url)}</code> <span class="ptype">${escapeHtml(d.purpose || "")}</span></li>`).join("")}</ul>`
+    : `<span class="ptype">fetches nothing</span>`;
+  const needs = (p.needs || []).length
+    ? `<ul class="grant-list">${p.needs.map(n => {
+        const cls = { pending: "kind", approved: "ok", rejected: "err" }[n.status] || "disabled";
+        return `<li><code>${escapeHtml(n.name || n.proposal)}</code>
+          <span class="badge kind">${escapeHtml(n.kind || "")}</span>
+          <span class="badge ${cls}">${escapeHtml(n.status || "")}</span></li>`; }).join("")}</ul>`
+    : `<span class="ptype">none</span>`;
+  const actions = [];
+  if (p.state?.done_requested || st !== "done")
+    actions.push(`<button class="btn-approve" data-proj-done="${escapeHtml(p.name)}">confirm done</button>`);
+  if (st === "done")
+    actions.push(`<button data-proj-status="${escapeHtml(p.name)}" data-to="in_progress">reopen by hand</button>`);
+  if (st === "in_progress")
+    actions.push(`<button data-proj-status="${escapeHtml(p.name)}" data-to="paused">pause</button>`);
+  if (st === "paused")
+    actions.push(`<button data-proj-status="${escapeHtml(p.name)}" data-to="in_progress">resume</button>`);
+  return `
+    <div class="tool-card proj-card" id="proj-${escapeHtml(p.name)}">
+      <div class="card-head proj-head">
+        <span class="caret">▸</span>
+        <span class="name">${escapeHtml(p.title || p.name)}</span>
+        <span class="badge ${STATUS_CLS[st] || "kind"}">${escapeHtml(st.replace("_", " "))}</span>
+        ${asking}
+        <span class="src">${escapeHtml(p.name)} · ${p.journal_count || 0} entries</span>
+      </div>
+      <div class="card-body">
+        ${last}
+        <div class="grants">
+          <div><span class="label">workspace:</span> ${p.workspace ? `<code>${escapeHtml(p.workspace)}</code>` : `<span class="ptype">none</span>`}</div>
+          <div><span class="label">may fetch from:</span> ${dl}</div>
+          <div><span class="label">needs:</span> ${needs}</div>
+          ${files}
+        </div>
+        <div class="prop-plan">
+          <button data-proj-plan="${escapeHtml(p.name)}">read the plan</button>
+          <button data-proj-journal="${escapeHtml(p.name)}">open the journal ▾</button>
+        </div>
+        <div class="journal" id="journal-${escapeHtml(p.name)}"></div>
+        <div class="prop-actions">${actions.join("")}</div>
+      </div>
+    </div>`;
+}
+
+async function loadJournal(name) {
+  const host = document.getElementById(`journal-${name}`);
+  host.innerHTML = `<div class="loading">loading…</div>`;
+  try {
+    const p = await api(`/projects/${encodeURIComponent(name)}`);
+    const entries = (p.journal || []).slice().reverse();
+    host.innerHTML = entries.length
+      ? entries.map(e => `
+        <div class="entry ${escapeHtml(e.by || "model")}">
+          <div class="entry-head">
+            <span class="ptype">#${e.id} · ${escapeHtml(fmtWhen(e.at))} · ${escapeHtml(e.by || "model")}</span>
+            ${e.status ? `<span class="badge ${STATUS_CLS[e.status] || "kind"}">${escapeHtml(String(e.status).replace("_", " "))}</span>` : ""}
+            ${e.asks ? `<span class="badge warn">asks: ${escapeHtml(e.asks)}</span>` : ""}
+            ${e.commit ? `<code title="commit">${escapeHtml(e.commit.slice(0, 10))}</code>` : ""}
+          </div>
+          <div class="md">${renderMarkdown(e.text || "")}</div>
+          ${(e.files || []).length ? `<div class="entry-files">${e.files.map(f => `<code>${escapeHtml(f)}</code>`).join(" ")}</div>` : ""}
+        </div>`).join("")
+      : `<div class="empty">the journal is empty</div>`;
+  } catch (e) { showError(host, e); }
+}
+
+async function showProjectPlan(name) {
+  const dlg = document.getElementById("plan-dialog");
+  const body = document.getElementById("plan-body");
+  body.innerHTML = `<div class="loading">loading…</div>`;
+  document.getElementById("plan-dialog-sub").textContent = name;
+  dlg.querySelectorAll("[data-plan-close]").forEach(b => b.onclick = () => dlg.close());
+  const show = part => {
+    dlg.querySelectorAll("[data-plan-part]").forEach(b => b.classList.toggle("on", b.dataset.planPart === part));
+    body.innerHTML = part === "contract"
+      ? `<pre>${escapeHtml(PLAN_TEXTS.contract || "")}</pre>`
+      : (PLAN_TEXTS[part] ? `<div class="md">${renderMarkdown(PLAN_TEXTS[part])}</div>`
+                          : `<div class="empty">nothing written here</div>`);
+  };
+  dlg.querySelectorAll("[data-plan-part]").forEach(b => b.onclick = () => show(b.dataset.planPart));
+  dlg.showModal();
+  try {
+    const p = await api(`/projects/${encodeURIComponent(name)}`);
+    const c = p.contract || {};
+    PLAN_TEXTS = { plan: p.plan || "", testing: p.testing || "",
+                   contract: JSON.stringify(c, null, 2) };
+    document.getElementById("plan-dialog-title").textContent = c.title || name;
+    show("plan");
+  } catch (e) { showError(body, e); }
+}
+
+async function projectAct(name, what) {
+  const note = window.prompt(what === "done"
+    ? "Confirm done: the plan's 'what done looks like' was met. A note is optional."
+    : `Set ${what.replace("_", " ")}. A note is optional.`, "");
+  if (note === null) return;
+  try {
+    const path = what === "done" ? "done" : "status";
+    const data = await api(`/projects/${encodeURIComponent(name)}/${path}`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(what === "done" ? { note } : { status: what, note }),
+    });
+    if (data && data.ok === false) window.alert(data.error || "refused");
+  } catch (e) { window.alert("failed: " + (e.message || e)); }
+  refreshProjects();
 }
 
 // ── Config panel ─────────────────────────────────────────────────
@@ -602,6 +962,7 @@ function logRowHtml(e) {
 const REFRESH = {
   tools: refreshTools,
   proposals: refreshProposals,
+  projects: refreshProjects,
   config: refreshConfig,
   state: refreshState,
   logs: refreshLogs,

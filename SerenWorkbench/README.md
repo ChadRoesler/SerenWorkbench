@@ -142,6 +142,14 @@ kept on this box, and the review says in so many words that approving sends it.
 
 **→ [docs/TOOL-PROPOSALS.md](https://github.com/ChadRoesler/SerenWorkbench/blob/main/SerenWorkbench/docs/TOOL-PROPOSALS.md)** — what to look at when reviewing one.
 
+A model can also propose a **project**: a piece of work with a rendered plan,
+the one directory it may touch, an explicit list of sites it may fetch from,
+and the tools it will need, each of which is its own proposal under it.
+Approving a project agrees to the plan and the limits and turns nothing on; a
+**revision** of an agreed project is its own proposal, shown as a diff.
+
+**→ [docs/PROJECT-PROPOSALS.md](https://github.com/ChadRoesler/SerenWorkbench/blob/main/SerenWorkbench/docs/PROJECT-PROPOSALS.md)** — projects and revisions.
+
 ### What reload won't do
 
 It reads files that are already on disk. It cannot author a tool, it

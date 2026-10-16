@@ -35,6 +35,13 @@
           <option value="rejected">rejected</option>
           <option value="superseded">superseded</option>
         </select>
+        <select id="proposals-kind">
+          <option value="">every kind</option>
+          <option value="tool">tools</option>
+          <option value="plugin">plugins</option>
+          <option value="project">projects</option>
+          <option value="revision">revisions</option>
+        </select>
         <button data-refresh="proposals">↻</button>
       </div>
     </div>
@@ -45,9 +52,74 @@
       <a href="#" data-tab="state" class="tab-link">Tool State</a> tab. Read the
       <span class="mono">runs</span> line, not the description: that's what
       actually executes. Rejecting requires a critique, and the proposer reads
-      it and can revise.
+      it and can revise. A <em>project</em> is a piece of work: approving one
+      agrees to its plan, its one directory and its download sites, and to
+      nothing else - each need it lists is its own proposal below it, with its
+      own switches. A <em>revision</em> changes an agreed project; read the diff.
     </div>
     <div id="proposals-body" class="loading">loading…</div>
+  </div>
+</section>
+
+<!-- A project's plan, rendered. The plan is the thing being agreed to,
+     so it gets a page, not a <pre>. -->
+<dialog id="plan-dialog" class="dialog dialog-wide">
+  <div class="dialog-head">
+    <span class="dialog-title" id="plan-dialog-title">Plan</span>
+    <button type="button" class="dialog-x" data-plan-close aria-label="close">✖</button>
+  </div>
+  <div class="dialog-sub" id="plan-dialog-sub">—</div>
+  <div class="plan-tabs">
+    <button type="button" data-plan-part="plan" class="on">plan</button>
+    <button type="button" data-plan-part="testing">testing notes</button>
+    <button type="button" data-plan-part="contract">contract</button>
+  </div>
+  <div class="plan-body" id="plan-body"></div>
+</dialog>
+
+<!-- Reject form. A critique is the only thing the proposer gets to revise
+     against, so it gets a real box, not a browser prompt. "Permanently"
+     is the difference between "not like this" and "not at all". -->
+<dialog id="reject-dialog" class="dialog">
+  <form id="reject-form" method="dialog">
+    <div class="dialog-head">
+      <span class="dialog-title">Reject</span>
+      <button type="button" class="dialog-x" data-reject-cancel aria-label="close">✖</button>
+    </div>
+    <div class="dialog-sub" id="reject-dialog-sub">—</div>
+    <textarea id="reject-critique" rows="6" required
+      placeholder="Why? The proposer reads this and revises against it. Say what would make a better second attempt."></textarea>
+    <label class="dialog-check">
+      <input type="checkbox" id="reject-final">
+      <span>Permanently reject</span>
+      <span class="hint">closes the chain: no revision can supersede it, and a later proposal asking
+        for the same name is refused with this critique</span>
+    </label>
+    <div class="dialog-actions">
+      <button type="button" data-reject-cancel>cancel</button>
+      <button type="submit" class="btn-reject" id="reject-submit">submit</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Projects: life after approval -->
+<section class="view" id="projects">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="info" id="projects-info">—</div>
+      <div class="ctrls"><button data-refresh="projects">↻</button></div>
+    </div>
+    <div class="note">
+      <span class="label">the cabinet of plans:</span>
+      every project agreed through the queue, with where it stands and what has
+      been done inside it. The <em>journal</em> is written by the model as it
+      works - what it did, which files, what it checked, what is next - and is
+      the no-repo git. The model may mark a project in progress or paused and
+      may <em>ask</em> for done; you confirm done here, because done means the
+      plan's "what done looks like" was met. A revision agreed against a done
+      project reopens it.
+    </div>
+    <div id="projects-body" class="loading">loading…</div>
   </div>
 </section>
 
