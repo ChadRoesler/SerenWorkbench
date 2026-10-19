@@ -479,3 +479,19 @@ table.logs tr.err-detail td {
   .panel.active, .loading { animation: none; }
   * { transition: none !important; }
 }
+
+/* Projects: the cabinet line and the count bar (design doodle, 17 Oct 2026).
+   The bar is the list's own heading: the open work on one side, what is
+   done on the other, the ▶ on whichever is showing. */
+.panel-header .info .cabinet-path { font-family: var(--mono); color: var(--text); word-break: break-all; }
+.proj-bar { display: flex; flex-wrap: wrap; margin: 10px 0 12px; border: 1px solid var(--border);
+            border-radius: 8px; overflow: hidden; }
+.proj-bar .proj-view { flex: 1 1 auto; display: flex; align-items: center; gap: 6px; padding: 7px 12px;
+                       background: none; border: none; border-right: 1px solid var(--border);
+                       color: var(--text-mute); font: inherit; text-align: left; cursor: pointer; }
+.proj-bar .proj-view:last-child { border-right: none; flex: 0 0 auto; }
+.proj-bar .proj-view:hover { color: var(--text); background: var(--surface-2); }
+.proj-bar .proj-view.on { color: var(--text); font-weight: 600; background: var(--surface-2); }
+.proj-bar .proj-view .caret { font-size: .8em; color: var(--accent); visibility: hidden; }
+.proj-bar .proj-view.on .caret { visibility: visible; }
+.proj-bar .proj-view:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }

@@ -79,7 +79,10 @@ PROPOSE_PROJECT_TOOL_DEF = {
         "properties": {
             "name": {
                 "type": "string",
-                "description": "A short slug (lower-case, 3-41 chars). It names the project's folder.",
+                "description": (
+                    "A short slug (lower-case, 3-41 chars). It names the project's folder, "
+                    "and its drawer in the cabinet: where the work's own files will live."
+                ),
             },
             "title": {
                 "type": "string",
@@ -100,8 +103,12 @@ PROPOSE_PROJECT_TOOL_DEF = {
             "workspace": {
                 "type": "string",
                 "description": (
-                    "The ONE absolute directory the work may touch, on the box where "
-                    "the work happens. Leave empty only if the work touches nothing."
+                    "The ONE absolute directory the work acts on, on the box where "
+                    "the work happens (a game folder, say). Not where your own files "
+                    "go: once agreed, the project gets a drawer in the cabinet for "
+                    "source, notes and builds, so reinstalling the thing you modify "
+                    "cannot take the work with it. Leave empty if the work acts on "
+                    "nothing outside its drawer."
                 ),
             },
             "testing": {
@@ -172,7 +179,13 @@ LIST_PROJECTS_TOOL_DEF = {
         "approved and enabled), its status, and the tail of its journal. Read "
         "this before touching a project's files or fetching anything for it - "
         "the grants are the agreement, a need that is still pending is a tool "
-        "you do not have yet, and the journal is where the last you stopped."
+        "you do not have yet, and the journal is where the last you stopped.\n"
+        "\n"
+        "Each project has a `drawer`: its folder in the cabinet (`cabinet`, set "
+        "by the operator), where the work's OWN files live - source, notes, "
+        "builds. Keep them there, not in the workspace: the workspace is what "
+        "the work acts on and can be wiped by a reinstall, the drawer is kept. "
+        "The path is for the box the work is done on; `~` is that box's home."
     ),
     "input_schema": {
         "type": "object",
@@ -189,7 +202,8 @@ PROJECT_LOG_TOOL_DEF = {
     "name": "project_log",
     "description": (
         "Write an entry in a project's journal: what you did, which files you "
-        "touched (relative to the workspace), what you checked, what is next. "
+        "touched (relative to the workspace, or to the project's drawer), what "
+        "you checked, what is next. "
         "The journal is the no-repo git, and it is what the person reads when "
         "they come back - so write it as you go, not at the end. Your first "
         "entry moves the project from agreed to in_progress.\n"
@@ -205,7 +219,7 @@ PROJECT_LOG_TOOL_DEF = {
             "project": {"type": "string", "description": "The approved project's name."},
             "entry": {"type": "string", "description": "What you did and found, in plain language."},
             "files": {"type": "array", "items": {"type": "string"},
-                      "description": "Paths touched, relative to the workspace. No '..'."},
+                      "description": "Paths touched, relative to the workspace or the drawer. No '..'."},
             "commit": {"type": "string", "description": "Optional git hash this entry corresponds to."},
             "status": {"type": "string", "enum": ["in_progress", "paused", "done"],
                        "description": "Optional status move; done is a request for confirmation."},
@@ -346,13 +360,17 @@ async def list_my_projects(
         p = proposals.project(name)
         if p is None:
             return _err(f"no approved project named '{name}'.", "list_my_projects with no name lists them.")
-        return json.dumps({"project": p["grants"], "state": p["state"], "plan": p["plan"],
+        return json.dumps({"project": p["grants"], "cabinet": proposals.cabinet().get("path"),
+                           "state": p["state"], "plan": p["plan"],
                            "testing": p["testing"], "history": p["history"],
                            "files_touched": p["files_touched"],
                            "journal": p["journal"][-limit:] if limit else p["journal"]}, indent=2)
     items = proposals.projects()
+    cab = proposals.cabinet()
     return json.dumps({
         "count": len(items),
+        "cabinet": cab.get("path"),
+        **({"cabinet_error": cab["error"]} if cab.get("error") else {}),
         "projects": [{**p["grants"], "status": p["state"].get("status"),
                       "done_requested": bool(p["state"].get("done_requested")),
                       "journal_count": len(p["journal"]),

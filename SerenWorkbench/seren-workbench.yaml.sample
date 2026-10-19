@@ -130,6 +130,14 @@ dashboard:
   state_file: ""
   proposals_enabled: true
   proposals_dir: ""
+  # Where projects live: each agreed project keeps its own files (source,
+  # notes, builds) in a drawer here, <cabinet>/<name>, apart from the
+  # workspace it acts on - so reinstalling the thing a project modifies (a
+  # game) cannot take the work. Blank = `projects` beside tools_dir. Kept as
+  # written, `~` included: it is a path on the box the work is done on,
+  # which may not be this one. The agreed contracts are NOT kept here; they
+  # stay under tools_dir, where only the approval gate writes.
+  cabinet: ""
 
 # ── Snapshots ─────────────────────────────────────────────────────────
 #

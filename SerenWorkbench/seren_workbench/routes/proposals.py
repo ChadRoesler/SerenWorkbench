@@ -5,7 +5,7 @@ GET  /proposals                 list, newest first
 GET  /proposals/{id}            one, including the full manifest text
 POST /proposals/{id}/approve    install it and reload the live surface
 POST /proposals/{id}/reject     refuse it, with a critique the proposer reads
-GET  /projects                  the projects agreed so far, with their grants
+GET  /projects                  the projects agreed so far, with their grants, and the cabinet they live in
 GET  /projects/{name}           one, with its plan, testing notes and history
 GET  /projects/{name}/grants    the contract as a harness consumes it
 POST /projects/{name}/done      operator: confirm the plan's "done" was met
@@ -168,8 +168,11 @@ async def approve_proposal(request: Request, pid: str):
 async def list_projects(request: Request):
     """Every agreed project, with its grants. The list a harness reads to
     know where work may happen and what it may fetch."""
-    items = _store(request).projects()
+    store = _store(request)
+    items = store.projects()
     return {"count": len(items),
+            # where projects live: each one's `drawer` is a folder in here
+            "cabinet": store.cabinet(),
             "projects": [{**x["grants"], "state": x["state"],
                           "journal_count": len(x["journal"]),
                           "last_entry": (x["journal"][-1] if x["journal"] else None),

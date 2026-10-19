@@ -674,6 +674,9 @@ async function actOn(pid, action) {
 // Life after approval. The queue says what was agreed; this says what has
 // happened inside it since. Journal entries are the model's own words.
 let PROJECTS = [];
+let CABINET = null;
+// Which list the count bar shows: the work still open, or what is done.
+let PROJ_VIEW = (() => { try { return localStorage.getItem("workbench.projView") === "done" ? "done" : "active"; } catch { return "active"; } })();
 async function refreshProjects() {
   const body = document.getElementById("projects-body");
   if (!body) return;
@@ -681,10 +684,9 @@ async function refreshProjects() {
   try {
     const data = await api("/projects");
     PROJECTS = data.projects || [];
+    CABINET = data.cabinet || null;
     const asking = PROJECTS.filter(p => p.state?.done_requested).length;
-    document.getElementById("projects-info").textContent =
-      `${PROJECTS.length} agreed · ${PROJECTS.filter(p => p.state?.status === "in_progress").length} in progress` +
-      (asking ? ` · ${asking} asking for done` : "");
+    document.getElementById("projects-info").innerHTML = cabinetLineHtml(CABINET);
     const pip = document.getElementById("projects-pip");
     if (pip) { pip.textContent = String(asking); pip.hidden = asking === 0; }
     renderProjects();
@@ -699,15 +701,59 @@ async function refreshProjects() {
   }
 }
 
+// The header line: where projects live. The path as written - it may be a
+// path on the desk the work is done at rather than on this box.
+function cabinetLineHtml(c) {
+  if (!c) return `<span class="label">location:</span> <span class="ptype">unknown</span>`;
+  if (c.error || !c.path)
+    return `<span class="label">location:</span> <span class="badge warn" title="${escapeHtml(c.error || "")}">cabinet unusable</span>
+      <span class="ptype">${escapeHtml(c.error || "dashboard.cabinet is not set")}</span>`;
+  const where = c.on_this_box ? "on this box" : "not on this box: where the work is done, or not made yet";
+  const how = c.configured ? "dashboard.cabinet" : "default: beside the tools folder · set dashboard.cabinet to move it";
+  return `<span class="label">location:</span> <code class="cabinet-path">${escapeHtml(c.path)}</code>
+    <span class="ptype" title="${escapeHtml(where)} · contracts are kept apart, in ${escapeHtml(c.contracts || "the tools folder")}">${escapeHtml(how)}</span>`;
+}
+
+// The count bar from the design doodle (17 Oct 2026): "▶ 1 agreed  1 in progress  X completed",
+// and the arrow flips the list between the work still open and what is done.
+function projectBarHtml() {
+  const by = s => PROJECTS.filter(p => (p.state?.status || "agreed") === s).length;
+  const asking = PROJECTS.filter(p => p.state?.done_requested).length;
+  const open = [`${by("agreed")} agreed`, `${by("in_progress")} in progress`];
+  if (by("paused")) open.push(`${by("paused")} paused`);
+  const seg = (view, label, extra = "") =>
+    `<button type="button" role="tab" class="proj-view${PROJ_VIEW === view ? " on" : ""}" data-proj-view="${view}"
+       aria-selected="${PROJ_VIEW === view}"><span class="caret">▶</span>${label}${extra}</button>`;
+  return seg("active", open.join(" · "), asking ? ` <span class="badge warn">${asking} asking for done</span>` : "")
+       + seg("done", `${by("done")} completed`);
+}
+
 function renderProjects() {
   const body = document.getElementById("projects-body");
   body.className = "";
+  const bar = document.getElementById("projects-bar");
+  if (bar) {
+    bar.innerHTML = projectBarHtml();
+    bar.querySelectorAll("[data-proj-view]").forEach(b => b.addEventListener("click", () => {
+      PROJ_VIEW = b.dataset.projView;
+      try { localStorage.setItem("workbench.projView", PROJ_VIEW); } catch {}
+      renderProjects();
+    }));
+  }
   if (PROJECTS.length === 0) {
     body.innerHTML = `<div class="empty">nothing agreed yet — approve a project in the queue
       and it lands here</div>`;
     return;
   }
-  body.innerHTML = PROJECTS.map(projectCardHtml).join("");
+  const shown = PROJECTS.filter(p => ((p.state?.status || "agreed") === "done") === (PROJ_VIEW === "done"));
+  if (shown.length === 0) {
+    body.innerHTML = PROJ_VIEW === "done"
+      ? `<div class="empty">nothing completed yet — done is confirmed here, once the plan's
+           "what done looks like" was met</div>`
+      : `<div class="empty">nothing open — every agreed project is done; the completed list has them</div>`;
+    return;
+  }
+  body.innerHTML = shown.map(projectCardHtml).join("");
   body.querySelectorAll(".proj-head").forEach(h =>
     h.addEventListener("click", () => h.parentElement.classList.toggle("expanded")));
   body.querySelectorAll("[data-proj-plan]").forEach(b =>
@@ -771,7 +817,10 @@ function projectCardHtml(p) {
       <div class="card-body">
         ${last}
         <div class="grants">
-          <div><span class="label">workspace:</span> ${p.workspace ? `<code>${escapeHtml(p.workspace)}</code>` : `<span class="ptype">none</span>`}</div>
+          <div><span class="label">workspace:</span> ${p.workspace ? `<code>${escapeHtml(p.workspace)}</code>` : `<span class="ptype">none</span>`}
+            <span class="ptype">what the work acts on</span></div>
+          <div><span class="label">drawer:</span> ${p.drawer ? `<code>${escapeHtml(p.drawer)}</code>` : `<span class="ptype">none: the cabinet is unusable</span>`}
+            <span class="ptype">where its own files live</span></div>
           <div><span class="label">may fetch from:</span> ${dl}</div>
           <div><span class="label">needs:</span> ${needs}</div>
           ${files}

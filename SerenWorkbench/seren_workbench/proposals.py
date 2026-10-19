@@ -61,6 +61,7 @@ ON DISK, per proposal:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import secrets
@@ -73,6 +74,8 @@ from typing import Any, Dict, List, Optional
 import yaml
 
 from . import projects as _proj
+
+log = logging.getLogger("seren_workbench.proposals")
 
 MAX_MANIFEST_CHARS = 32_000
 VALID_KINDS = ("process", "web")
@@ -141,6 +144,8 @@ class ProposalStore:
         plugins_dir: Optional[str] = None,
         live_plugins: Optional[Any] = None,
         projects_dir: Optional[str] = None,
+        cabinet: Optional[str] = None,
+        cabinet_set: bool = False,
     ) -> None:
         self._dir = Path(proposals_dir)
         self._tools_dir = Path(tools_dir)
@@ -149,6 +154,19 @@ class ProposalStore:
         # loads it; the loader's glob is non-recursive and these are not
         # manifests anyway.
         self._projects_dir = Path(projects_dir) if projects_dir else self._tools_dir / "projects"
+        # The cabinet: where the projects' own FILES live, one drawer each
+        # (seren_workbench.projects, "The cabinet"). Not the contract folder
+        # above, ever: that one only the approval gate writes. A cabinet that
+        # cannot be used is reported with its reason and gives no drawers,
+        # rather than quietly falling back to somewhere nobody chose.
+        raw = cabinet if cabinet is not None else str(self._tools_dir.parent / "projects")
+        self._cabinet_set = bool(cabinet_set)
+        try:
+            self._cabinet: Optional[str] = _proj.check_cabinet(raw)
+            self._cabinet_error: Optional[str] = None
+        except _proj.ProjectError as ex:
+            self._cabinet, self._cabinet_error = None, str(ex)
+            log.warning("projects: %s", ex)
         # Where an approved plugin is installed, and a callable for the names
         # plugged in right now (the hub's components and plugins) - a
         # callable for the same reason live_names is one.
@@ -1016,12 +1034,28 @@ class ProposalStore:
             "plan": _read("plan.md"),
             "testing": _read("testing.md"),
             "history": history,
-            "grants": _proj.grants(contract, needs_status),
+            "grants": _proj.grants(contract, needs_status, self._cabinet),
             "home": str(home),
             "state": self._read_state(home),
             "journal": journal,
             "files_touched": _proj.files_touched(journal),
         }
+
+    def cabinet(self) -> Dict[str, Any]:
+        """Where projects live, for the viewer's Location line and the
+        model's list: the path as written, whether the operator set it or
+        it is the default beside the tools folder, whether that folder is
+        on THIS box (a Workbench on the cluster head records a cabinet on
+        the desk the work is done at), and why not when it cannot be used."""
+        here = False
+        if self._cabinet:
+            try:
+                here = Path(os.path.expanduser(self._cabinet)).is_dir()
+            except (OSError, ValueError):
+                here = False
+        return {"path": self._cabinet, "configured": self._cabinet_set,
+                "on_this_box": here, "error": self._cabinet_error,
+                "contracts": str(self._projects_dir)}
 
     def projects(self) -> List[Dict[str, Any]]:
         out = []

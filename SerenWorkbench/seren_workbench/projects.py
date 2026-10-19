@@ -106,6 +106,56 @@ def check_workspace(path: str) -> str:
     return path
 
 
+# ── The cabinet: where projects live ───────────────────────────────────
+#
+# Design note, 17 Oct 2026: "a designated cabinet for your projects would be
+# better suited so that a reinstall of game doesnt loose it". The WORKSPACE
+# is what the work acts on (a game folder); the DRAWER is where the work's
+# own files are kept (source, notes, builds). Different places on purpose:
+# one is someone else's install and can be wiped, the other must not be.
+# The drawer is not part of the reviewed contract - the cabinet is an
+# operator setting, so moving it moves every drawer, and no proposal names
+# or changes it.
+
+def _windows_style(path: str) -> bool:
+    if re.match(r"^[A-Za-z]:[\\/]", path) or path.startswith("\\\\"):
+        return True
+    return path.startswith("~") and "\\" in path and "/" not in path
+
+
+def check_cabinet(path: str) -> str:
+    """The cabinet as the operator wrote it, or why it cannot be used.
+    Absolute (POSIX, a drive letter, a UNC share) or starting at `~`, with
+    no way back up. Not required to exist here: it is a path on the box the
+    work is done on, which may be another one."""
+    path = (path or "").strip()
+    if not path:
+        raise ProjectError("dashboard.cabinet is empty: name the folder projects live in.")
+    if len(path) > 512:
+        raise ProjectError("dashboard.cabinet is over 512 characters.")
+    home = path == "~" or path.startswith(("~/", "~\\"))
+    absolute = path.startswith("/") or bool(re.match(r"^[A-Za-z]:[\\/]", path)) or path.startswith("\\\\")
+    if not (home or absolute):
+        raise ProjectError(
+            f"dashboard.cabinet '{path}' is not an absolute path or one starting at '~'. "
+            "Name the folder projects live in, in full."
+        )
+    if any(p == ".." for p in re.split(r"[\\/]+", path)):
+        raise ProjectError("dashboard.cabinet must not contain '..' - name the folder directly.")
+    return path
+
+
+def drawer(cabinet: Optional[str], name: str) -> Optional[str]:
+    """A project's drawer: <cabinet>/<name>, joined the way the cabinet's
+    own path is written (backslashes for a Windows path, slashes otherwise),
+    because the box that reads it may not be this one."""
+    if not cabinet:
+        return None
+    sep = "\\" if _windows_style(cabinet) else "/"
+    root = cabinet.rstrip("/\\") or cabinet
+    return root + ("" if root.endswith(("/", "\\")) else sep) + name
+
+
 def check_downloads(items: Optional[List[Any]]) -> List[Dict[str, str]]:
     """An allowlist of sites with reasons. URL prefixes, https preferred,
     nothing that could carry a credential or be re-pointed later."""
@@ -256,8 +306,8 @@ def check_files(items: Optional[List[Any]]) -> List[str]:
             continue
         if f.startswith("/") or re.match(r"^[A-Za-z]:", f) or any(p == ".." for p in f.split("/")):
             raise ProjectError(
-                f"file '{raw}' must be relative to the workspace, with no '..': the "
-                "workspace is the one directory the work may touch."
+                f"file '{raw}' must be relative to the workspace (or to the project's "
+                "drawer), with no '..': those are the places the work may touch."
             )
         if len(f) > 512:
             raise ProjectError(f"file path '{f[:40]}...' is over 512 characters.")
@@ -296,13 +346,16 @@ def files_touched(journal: List[Dict[str, Any]]) -> List[str]:
     return sorted(seen)
 
 
-def grants(proj: Dict[str, Any], needs_status: Dict[str, str]) -> Dict[str, Any]:
+def grants(proj: Dict[str, Any], needs_status: Dict[str, str],
+           cabinet: Optional[str] = None) -> Dict[str, Any]:
     """The contract in the form a harness consumes: where the work may
-    happen, what it may fetch, which needs are actually live."""
+    happen, where its own files are kept, what it may fetch, which needs
+    are actually live."""
     return {
         "name": proj.get("name"),
         "title": proj.get("title"),
         "workspace": proj.get("workspace") or None,
+        "drawer": drawer(cabinet, str(proj.get("name") or "")) if proj.get("name") else None,
         "allowed_download_prefixes": [d["url"] for d in (proj.get("downloads") or [])],
         "downloads": proj.get("downloads") or [],
         "needs": [{**n, "status": needs_status.get(str(n.get("proposal")), "unknown")}

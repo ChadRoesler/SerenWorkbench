@@ -124,6 +124,10 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
                 live_names=lambda: {t.name for t in app.state.tool_registry.all_tools()},
                 self_addr=self_addr,
                 plugins_dir=cfg.dashboard.resolve_plugins_dir(),
+                # Where projects live (dashboard.cabinet): each agreed project's
+                # drawer, for the work's own files. Not the contract folder.
+                cabinet=cfg.dashboard.resolve_cabinet(),
+                cabinet_set=bool((cfg.dashboard.cabinet or "").strip()),
                 # Every name the hub has: the standard components and what
                 # is plugged in. Asked at the moment it matters.
                 live_plugins=lambda: set(getattr(getattr(app.state, "upstreams", None), "states", {}) or {}),

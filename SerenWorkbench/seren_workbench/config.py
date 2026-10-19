@@ -80,6 +80,18 @@ class DashboardConfig:
     defensible only because a proposal cannot run: it is a text file in a
     directory nothing loads until a human moves it. Set false to remove the
     tool entirely - "don't install" as a config line.
+
+    cabinet is WHERE PROJECTS LIVE: each agreed project gets a drawer in it,
+    <cabinet>/<name>, for the work's own files - source, notes, builds - kept
+    apart from the workspace the work acts on, so reinstalling the thing a
+    project modifies (a game, say) cannot take the work with it. Blank means
+    `projects` beside tools_dir, which on an install-root layout is
+    stores/workbench/projects. It is NOT where the agreed contract lives:
+    that stays in <tools_dir>/projects/<name>, written only by the approval
+    gate, so the place the model keeps its files is never the place its
+    limits are written down. Kept AS WRITTEN, `~` included and unexpanded:
+    the work may be done on another box than this one (a mod is built where
+    the game is), and there `~` is that box's home.
     """
     enabled: bool = True
     tools_dir: str = DEFAULT_TOOLS_DIR
@@ -88,6 +100,7 @@ class DashboardConfig:
     proposals_dir: str = ""          # "" => <tools_dir>/proposed
     proposals_enabled: bool = True
     state_file: str = ""             # "" => <tools_dir>/.tool-state.json
+    cabinet: str = ""                # "" => `projects` beside tools_dir; kept as written
 
     def __post_init__(self) -> None:
         self.tools_dir = _expand(self.tools_dir)
@@ -99,6 +112,15 @@ class DashboardConfig:
 
     def resolve_state_file(self) -> str:
         return self.state_file or os.path.join(self.tools_dir, STATE_FILE_NAME)
+
+    def resolve_cabinet(self) -> str:
+        """Where projects live: the operator's line as written, or `projects`
+        beside the tools folder. Validated by the ProposalStore, which says
+        why when it cannot be used rather than quietly using another."""
+        written = (self.cabinet or "").strip()
+        if written:
+            return written
+        return os.path.join(os.path.dirname(os.path.normpath(self.tools_dir)), "projects")
 
     def resolve_plugins_dir(self) -> str:
         """Where an APPROVED plugin proposal is installed: one small yaml per
@@ -119,6 +141,7 @@ class DashboardConfig:
             proposals_dir=str(d.get("proposals_dir", "") or ""),
             proposals_enabled=bool(d.get("proposals_enabled", True)),
             state_file=str(d.get("state_file", "") or ""),
+            cabinet=str(d.get("cabinet", "") or ""),
         )
 
 
@@ -479,6 +502,8 @@ def _apply_env_overrides(cfg: WorkbenchConfig) -> WorkbenchConfig:
         cfg.dashboard.tools_dir = _expand(v)
     if v := env.get("SEREN_WORKBENCH_STATE_FILE"):
         cfg.dashboard.state_file = _expand(v)
+    if v := env.get("SEREN_WORKBENCH_CABINET"):
+        cfg.dashboard.cabinet = v          # as written: see DashboardConfig
     if v := env.get("SEREN_WORKBENCH_MEMORY_URL"):
         cfg.services.memory_url = v
     if v := env.get("SEREN_WORKBENCH_LOCI_URL"):

@@ -112,13 +112,17 @@
     <div class="note">
       <span class="label">the cabinet of plans:</span>
       every project agreed through the queue, with where it stands and what has
-      been done inside it. The <em>journal</em> is written by the model as it
-      works - what it did, which files, what it checked, what is next - and is
-      the no-repo git. The model may mark a project in progress or paused and
-      may <em>ask</em> for done; you confirm done here, because done means the
-      plan's "what done looks like" was met. A revision agreed against a done
-      project reopens it.
+      been done inside it. The <em>location</em> is the cabinet
+      (<code>dashboard.cabinet</code>): each project keeps its own files in a
+      drawer there, apart from the workspace it acts on, so reinstalling what
+      it modifies cannot take the work. The <em>journal</em> is written by the
+      model as it works - what it did, which files, what it checked, what is
+      next - and is the no-repo git. The model may mark a project in progress
+      or paused and may <em>ask</em> for done; you confirm done here, because
+      done means the plan's "what done looks like" was met. A revision agreed
+      against a done project reopens it.
     </div>
+    <div class="proj-bar" id="projects-bar" role="tablist" aria-label="which projects"></div>
     <div id="projects-body" class="loading">loading…</div>
   </div>
 </section>
