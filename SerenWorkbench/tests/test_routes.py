@@ -162,3 +162,40 @@ def test_viewer_contains_tool_list_area(client):
     html = client.get("/viewer").text
     # The body.html should have a section for the tool list
     assert "tools" in html.lower() or "tool-list" in html
+
+
+def test_viewer_header_is_the_family_pill_and_reload(client):
+    """The head aside wears what every Seren viewer wears: a .head-pill with
+    the one number (the tool count, no version) and a ⟳ that reloads the open
+    panel. "↻ refresh all" and the v-string pill are gone (20 Oct 2026)."""
+    html = client.get("/viewer").text
+    assert 'class="head-pill hot" id="status-pill"' in html
+    assert 'onclick="reload()"' in html
+    assert "refresh-all" not in html and "status-pill ok" not in html
+    assert "function reload()" in html
+    assert "tools: ${data.tools_count}" in html and "v${data.version}" not in html
+
+
+def test_viewer_cards_clip_their_hover_fill(client):
+    """A card's head paints a hover background inside a rounded border; the
+    card clips it, or the fill's square corners show past the radius."""
+    html = client.get("/viewer").text
+    css = html[html.index(".tool-card {"):]
+    for cls in (".tool-card {", ".state-card {", ".tbox {"):
+        block = css[css.index(cls):]
+        block = block[:block.index("}")]
+        assert "overflow: hidden" in block, cls
+
+
+def test_the_favicon_wears_the_same_accent_as_the_page(client):
+    """The shell tints the favicon from the accent render_from_dir is handed;
+    the leaf's styles.css sets --accent too. They must be the one hex, or
+    the tab icon wears last season's colour (20 Oct 2026: aqua page, grey
+    favicon)."""
+    import re
+    from pathlib import Path
+    html = client.get("/viewer").text
+    css = (Path(__file__).resolve().parents[1] / "seren_workbench" / "viewer" / "ui" / "styles.css").read_text(encoding="utf-8")
+    leaf = re.search(r"--accent:\s*(#[0-9a-fA-F]{6})", css).group(1).lower()
+    icon = re.search(r'<link rel="icon"[^>]*>', html).group(0)
+    assert leaf in icon.lower().replace("%23", "#"), (leaf, icon[:200])

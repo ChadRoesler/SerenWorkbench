@@ -350,15 +350,18 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
     async def viewer():
         """The operator dashboard — carded tool list with enable/disable toggles.
 
-        Renders the shared SerenMeninges baseplate with cool-grey accent and
-        the leaf fragment files from viewer/ui/.
+        Renders the shared SerenMeninges baseplate with the pale-aqua accent
+        and the leaf fragment files from viewer/ui/.
         """
         html = render_from_dir(
             viewer_dir,
             title="SerenWorkbench",
             brand="Seren<b>Workbench</b> · Tool Surface",
             subtitle=f"v{APP_VERSION} · the MCP tool layer",
-            accent="#8e9aaf",  # cool grey — slate with a hint of blue
+            # The ONE accent, the same hex the leaf's styles.css sets: the shell
+            # tints the favicon from this value, so when the page went aqua
+            # (20 Oct 2026) and this stayed cool grey the tab icon stayed grey.
+            accent="#afdbdb",
         )
         return HTMLResponse(html)
 

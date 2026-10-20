@@ -1,2 +1,7 @@
-<button id="refresh-all" title="Refresh every panel">↻ refresh all</button>
-<span id="status-pill" class="status-pill ok">running</span>
+<!-- Right-side header widgets, in the shell's head_aside stud: the same two
+     every Seren viewer wears (Memory, Loci): a .head-pill with the one number
+     this service is about, then ⟳. The pill is written by refreshSummary(); the
+     ⟳ reloads the pill and the panel that is open (20 Oct 2026: it used to be
+     "↻ refresh all" + "v5.x · N tools", the odd one out of the family). -->
+<span class="head-pill hot" id="status-pill">tools: …</span>
+<button onclick="reload()" title="Reload">⟳</button>

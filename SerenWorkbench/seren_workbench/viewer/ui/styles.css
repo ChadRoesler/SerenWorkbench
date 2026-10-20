@@ -4,13 +4,16 @@
  *  and the base design tokens (--surface, --border-soft, --radius, --mono,
  *  --text, --text-soft, --text-mute, --bg-soft, --surface-2, --border).
  *  This leaf owns the accent identity + all component styling below.
- *  Identity: cool grey — slate with a hint of blue.
+ *  Identity: pale aqua (#afdbdb), readable as a colour; cool grey before 20 Oct 2026.
  * ════════════════════════════════════════════════════════════════════ */
 
 :root {
-  --accent:    #8e9aaf;   /* cool grey */
-  --accent-2:  #a8b4c8;   /* lifted */
-  --accent-dim:#6b7a8e;   /* recessed */
+  /* Pale aqua since 20 Oct 2026 (Chad: "change the accent color, so that
+     it's more... big? readable as a color?: #afdbdb"). The cool grey it
+     replaced (#8e9aaf) read as no colour at all next to the family's. */
+  --accent:    #afdbdb;   /* pale aqua */
+  --accent-2:  #c9ecec;   /* lifted */
+  --accent-dim:#7fb0b0;   /* recessed */
   --slate:     #94a3b8;
   --ok:        #86efac;
   --err:       #fca5a5;
@@ -74,7 +77,7 @@
   outline: none;
   background: var(--surface);
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(142,154,175,0.12);
+  box-shadow: 0 0 0 3px rgba(175,219,219,0.12);
 }
 /* Select in a panel header — matches .filter exactly.
    The native control was shipped UNSTYLED, so the browser drew its own
@@ -106,7 +109,7 @@
   outline: none;
   background-color: var(--surface);
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(142,154,175,0.12);
+  box-shadow: 0 0 0 3px rgba(175,219,219,0.12);
 }
 /* The popup list is drawn by the OS, which otherwise uses system colours —
    light-on-light and unreadable against this theme on Windows. */
@@ -127,7 +130,7 @@
 .ctrls button:active { background: var(--surface-2); }
 .ctrls button:focus-visible {
   outline: none; border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(142,154,175,0.12);
+  box-shadow: 0 0 0 3px rgba(175,219,219,0.12);
 }
 
 /* note strip under a panel header */
@@ -137,7 +140,7 @@
   color: var(--text-mute);
   line-height: 1.5;
   border-bottom: 1px solid var(--border-soft);
-  background: rgba(142,154,175,0.045);
+  background: rgba(175,219,219,0.045);
 }
 .note .label { color: var(--accent); font-weight: 600; font-family: var(--mono); }
 .note a.tab-link { color: var(--accent-2); text-decoration: underline; cursor: pointer; }
@@ -153,45 +156,32 @@
 /* the scrolling content region of each panel */
 [id$="-body"] { padding: 12px 14px; }
 
-/* ── Status pill (header aside) ──────────────────────────────────── */
-.status-pill {
-  display: inline-block;
-  font-size: 0.72em;
-  padding: 2px 10px;
-  border-radius: 10px;
-  font-family: var(--mono);
-  border: 1px solid;
-  margin-left: 8px;
-}
-.status-pill.ok   { color: var(--ok);   border-color: var(--ok);   background: rgba(134,239,172,0.06); }
-.status-pill.err  { color: var(--err);  border-color: var(--err);  background: rgba(252,165,165,0.06); }
-.status-pill.warn { color: var(--warn); border-color: var(--warn); background: rgba(252,211,77,0.06); }
-
-#refresh-all {
-  background: transparent;
-  border: 1px solid var(--border-soft);
-  color: var(--text-soft);
-  padding: 4px 12px;
-  border-radius: 7px;
-  cursor: pointer;
-  font-size: 0.8em;
-  font-family: var(--mono);
-  transition: border-color 0.15s, color 0.15s;
-}
-#refresh-all:hover { border-color: var(--accent); color: var(--accent); }
+/* ── Header pill (header aside) ──────────────────────────────────── */
+/* The shell's .head-pill is the look; this only adds the "can't reach the
+   Workbench" colour, which the family spells with --err. */
+.head-pill.err { color: var(--err); border-color: var(--err); }
 
 /* ── Tool cards ──────────────────────────────────────────────────── */
+/* overflow: hidden on every rounded card (.tool-card, .state-card, .tbox) -
+   their heads paint a square hover background inside a rounded border, so
+   the fill's corners poked out past the radius on every hover ("sharp
+   corners over the rounded edges", Chad, 20 Oct 2026). Clipping at the card
+   is the fix that holds for whatever gets a background inside one later.
+   Nothing in a card needs to overflow: the toggle focus ring and the hover
+   ring sit inside the body padding, and the filter/select controls live in
+   the panel header, not in a card. */
 .tool-card {
   background: var(--surface);
   border: 1px solid var(--border-soft);
   border-left: 2px solid transparent;
   border-radius: var(--radius);
   margin-bottom: 10px;
+  overflow: hidden;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .tool-card:hover {
   border-color: var(--accent-dim);
-  box-shadow: 0 0 0 1px rgba(142,154,175,0.10);
+  box-shadow: 0 0 0 1px rgba(175,219,219,0.10);
 }
 .tool-card.expanded {
   border-left-color: var(--accent);
@@ -243,6 +233,7 @@
   border-left: 2px solid transparent;
   border-radius: var(--radius);
   margin-bottom: 10px;
+  overflow: hidden;                 /* see .tool-card */
   transition: border-color 0.15s;
 }
 .state-card:hover { border-color: var(--accent-dim); }
@@ -292,13 +283,13 @@
   border-radius: 50%; transition: transform 0.2s, background 0.2s;
 }
 .toggle-switch input:checked + .toggle-slider {
-  background: rgba(142,154,175,0.18); border-color: var(--accent);
+  background: rgba(175,219,219,0.18); border-color: var(--accent);
 }
 .toggle-switch input:checked + .toggle-slider::before {
   transform: translateX(18px); background: var(--accent);
 }
 .toggle-switch input:focus-visible + .toggle-slider {
-  box-shadow: 0 0 0 3px rgba(142,154,175,0.18);
+  box-shadow: 0 0 0 3px rgba(175,219,219,0.18);
 }
 
 /* ── Tables (params / config / logs) ─────────────────────────────── */
@@ -320,7 +311,7 @@ table.params td.preq  { color: var(--warn); }
 table.params td.pdef  { font-family: var(--mono); color: var(--text-mute); }
 table.params td.pdesc { color: var(--text-soft); }
 /* ── Toolboxes (nested accordions) ───────────────────────────────── */
-.tbox { border: 1px solid var(--border, #2a2f3a); border-radius: 6px; margin: .4rem 0; }
+.tbox { border: 1px solid var(--border, #2a2f3a); border-radius: 6px; margin: .4rem 0; overflow: hidden; /* see .tool-card */ }
 .tbox-head {
   display: flex; align-items: center; gap: .5rem;
   padding: .55rem .7rem; cursor: pointer; user-select: none;
@@ -328,14 +319,20 @@ table.params td.pdesc { color: var(--text-soft); }
 .tbox-head:hover { background: rgba(127,127,127,.07); }
 .tbox-name { font-weight: 600; }
 .tbox-count { margin-left: auto; opacity: .6; font-size: .85em; }
-.tbox > .tbox-body { display: none; padding: .1rem .6rem .6rem .6rem; }
+/* The body breathes: a real gap under the head (the first card sat hard
+   against it), and the same .7rem left edge as the head's text, with a hair
+   more so a card's 1px hover ring is drawn, not clipped, now that the box
+   clips its overflow (20 Oct 2026). */
+.tbox > .tbox-body { display: none; padding: .55rem .75rem .7rem .75rem; }
 .tbox.expanded > .tbox-body { display: block; }
+.tbox > .tbox-body > .tool-card:last-child,
+.tbox > .tbox-body > .state-card:last-child { margin-bottom: 0; }
 /* The caret is the only thing that rotates; nesting means several are on
    screen at once, so scope it to THIS group and not descendants. */
 .tbox > .tbox-head > .caret { transition: transform .12s ease; }
 .tbox.expanded > .tbox-head > .caret { transform: rotate(90deg); }
 /* One indent step per level, drawn with a rule so the nesting reads. */
-.tbox .tbox { margin-left: .6rem; border-left: 2px solid var(--accent, #e06c5a); }
+.tbox .tbox { margin-left: .5rem; border-left: 2px solid var(--accent, #e06c5a); }
 
 /* Identity line inside an expanded tool: the callable name + where it lives. */
 .ident {
@@ -484,14 +481,26 @@ table.logs tr.err-detail td {
    The bar is the list's own heading: the open work on one side, what is
    done on the other, the ▶ on whichever is showing. */
 .panel-header .info .cabinet-path { font-family: var(--mono); color: var(--text); word-break: break-all; }
-.proj-bar { display: flex; flex-wrap: wrap; margin: 10px 0 12px; border: 1px solid var(--border);
-            border-radius: 8px; overflow: hidden; }
-.proj-bar .proj-view { flex: 1 1 auto; display: flex; align-items: center; gap: 6px; padding: 7px 12px;
-                       background: none; border: none; border-right: 1px solid var(--border);
-                       color: var(--text-mute); font: inherit; text-align: left; cursor: pointer; }
-.proj-bar .proj-view:last-child { border-right: none; flex: 0 0 auto; }
-.proj-bar .proj-view:hover { color: var(--text); background: var(--surface-2); }
-.proj-bar .proj-view.on { color: var(--text); font-weight: 600; background: var(--surface-2); }
-.proj-bar .proj-view .caret { font-size: .8em; color: var(--accent); visibility: hidden; }
-.proj-bar .proj-view.on .caret { visibility: visible; }
+/* Tab-shaped since 20 Oct 2026 (Chad: "it should look kinda tab like ...
+   cutie's choice"): the same underline tabs the shell draws at the top of
+   every viewer, one level down. The open list is the lit tab; the other
+   is a tab you can click. No box, no caret. */
+.proj-bar { display: flex; gap: 2px; margin: 6px 0 14px; border-bottom: 1px solid var(--border); }
+/* Four tabs, each the same width, the count in a pip: agreed, in progress,
+   review (asking for done), completed. Chad, 20 Oct 2026: "split out agreed
+   and in progress, add review ... flow like the tabs on top ... spaced evenly". */
+/* border-radius 0: the shell rounds every button, and a rounded button's
+   bottom border is a capsule curve, not a tab's underline (Chad, 20 Oct
+   2026: "straight line rather than a capsule curved line"). A zero count
+   draws no badge. */
+.proj-bar .proj-view { flex: 1 1 0; justify-content: center; display: flex; align-items: center; gap: 8px; padding: 9px 14px 8px; border-radius: 0;
+                       background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px;
+                       color: var(--text-mute); font: inherit; font-size: .92em; cursor: pointer; }
+.proj-bar .proj-view:hover { color: var(--text); }
+.proj-bar .proj-view.on { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.proj-bar .proj-view .caret { display: none; }
+.proj-bar .proj-view .n { font-family: var(--mono); font-size: .8em; color: var(--text-mute); padding: 0 .5em;
+                          border: 1px solid var(--border); border-radius: 999px; line-height: 1.6; }
+.proj-bar .proj-view.on .n { color: var(--accent); border-color: var(--accent); }
+.proj-bar .proj-view .sub { font-size: .8em; color: var(--text-mute); font-weight: 400; }
 .proj-bar .proj-view:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }

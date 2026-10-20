@@ -33,8 +33,15 @@ document.querySelectorAll(".tabbar .tab, .tab-link").forEach(el =>
 // ── Refresh buttons ───────────────────────────────────────────────
 document.querySelectorAll("[data-refresh]").forEach(b =>
   b.addEventListener("click", () => REFRESH[b.dataset.refresh]?.()));
-document.getElementById("refresh-all")?.addEventListener("click", () =>
-  Object.values(REFRESH).forEach(fn => fn()));
+
+// The header ⟳ (header_aside.html), the one every Seren viewer has: the
+// pill and the panel that is open. Not every panel - that was "refresh all",
+// six fetches to read one tab (20 Oct 2026).
+function reload() {
+  refreshSummary();
+  const open = document.querySelector(".view.active")?.id;
+  if (open) { _loaded[open] = true; REFRESH[open]?.(); }
+}
 
 // ── Shared helpers ────────────────────────────────────────────────
 function setLoading(el) { el.className = "loading"; el.textContent = "loading…"; }
@@ -50,8 +57,10 @@ async function refreshSummary() {
   try {
     const data = await api("/");
     if (pill) {
-      pill.className = "status-pill ok";
-      pill.textContent = `v${data.version} · ${data.tools_count} tools`;
+      // Just the count, like Memory's embedder and Loci's finder pill: the
+      // version is on the Config tab and in the shell's subtitle.
+      pill.className = "head-pill hot";     // lit in the accent, like the Callosum's fan pill
+      pill.textContent = `tools: ${data.tools_count}`;   // "tools: 99" (Chad, 20 Oct 2026)
     }
     // A pip on the tab when something is waiting on you. Someone asked for a
     // capability; that shouldn't need you to go looking for it.
@@ -59,7 +68,7 @@ async function refreshSummary() {
     const n = data.pending_proposals || 0;
     if (pip) { pip.hidden = n === 0; pip.textContent = String(n); }
   } catch (e) {
-    if (pill) { pill.className = "status-pill err"; pill.textContent = "disconnected"; }
+    if (pill) { pill.className = "head-pill err"; pill.textContent = "disconnected"; }
   }
 }
 
@@ -675,8 +684,15 @@ async function actOn(pid, action) {
 // happened inside it since. Journal entries are the model's own words.
 let PROJECTS = [];
 let CABINET = null;
-// Which list the count bar shows: the work still open, or what is done.
-let PROJ_VIEW = (() => { try { return localStorage.getItem("workbench.projView") === "done" ? "done" : "active"; } catch { return "active"; } })();
+// Which tab of the project bar is open: agreed, in_progress, review, done.
+// "active" was the name of the open-work tab until 20 Oct 2026; it reads as agreed.
+const PROJ_VIEWS = ["agreed", "in_progress", "review", "done"];
+let PROJ_VIEW = (() => {
+  try {
+    const v = localStorage.getItem("workbench.projView");
+    return PROJ_VIEWS.includes(v) ? v : (v === "active" ? "agreed" : "agreed");
+  } catch { return "agreed"; }
+})();
 async function refreshProjects() {
   const body = document.getElementById("projects-body");
   if (!body) return;
@@ -714,18 +730,30 @@ function cabinetLineHtml(c) {
     <span class="ptype" title="${escapeHtml(where)} · contracts are kept apart, in ${escapeHtml(c.contracts || "the tools folder")}">${escapeHtml(how)}</span>`;
 }
 
-// The count bar from the design doodle (17 Oct 2026): "▶ 1 agreed  1 in progress  X completed",
-// and the arrow flips the list between the work still open and what is done.
+// Which tab a project belongs to. review = asking for done, whatever its
+// status; in_progress takes paused along (it is open work, just resting).
+function projectView(p) {
+  const st = p.state?.status || "agreed";
+  if (st === "done") return "done";
+  if (p.state?.done_requested) return "review";
+  if (st === "in_progress" || st === "paused") return "in_progress";
+  return "agreed";
+}
+
+// The project bar: four tabs that flow like the tabs on top, one per stage,
+// the count in a pip (Chad, 20 Oct 2026: "split out agreed and in progress,
+// add review ... spaced evenly"). It grew out of the 17 Oct doodle's
+// "▶ 1 agreed  1 in progress  X completed" capsule, which read as cluttered.
 function projectBarHtml() {
-  const by = s => PROJECTS.filter(p => (p.state?.status || "agreed") === s).length;
-  const asking = PROJECTS.filter(p => p.state?.done_requested).length;
-  const open = [`${by("agreed")} agreed`, `${by("in_progress")} in progress`];
-  if (by("paused")) open.push(`${by("paused")} paused`);
+  const of = v => PROJECTS.filter(p => projectView(p) === v);
+  const paused = PROJECTS.filter(p => (p.state?.status || "") === "paused" && !p.state?.done_requested).length;
   const seg = (view, label, extra = "") =>
     `<button type="button" role="tab" class="proj-view${PROJ_VIEW === view ? " on" : ""}" data-proj-view="${view}"
-       aria-selected="${PROJ_VIEW === view}"><span class="caret">▶</span>${label}${extra}</button>`;
-  return seg("active", open.join(" · "), asking ? ` <span class="badge warn">${asking} asking for done</span>` : "")
-       + seg("done", `${by("done")} completed`);
+       aria-selected="${PROJ_VIEW === view}"><span class="caret">▶</span>${label}${of(view).length ? `<span class="n">${of(view).length}</span>` : ""}${extra}</button>`;
+  return seg("agreed", "agreed")
+       + seg("in_progress", "in progress", paused ? `<span class="sub">${paused} paused</span>` : "")
+       + seg("review", "review")
+       + seg("done", "completed");
 }
 
 function renderProjects() {
@@ -745,12 +773,16 @@ function renderProjects() {
       and it lands here</div>`;
     return;
   }
-  const shown = PROJECTS.filter(p => ((p.state?.status || "agreed") === "done") === (PROJ_VIEW === "done"));
+  const shown = PROJECTS.filter(p => projectView(p) === PROJ_VIEW);
   if (shown.length === 0) {
-    body.innerHTML = PROJ_VIEW === "done"
-      ? `<div class="empty">nothing completed yet — done is confirmed here, once the plan's
-           "what done looks like" was met</div>`
-      : `<div class="empty">nothing open — every agreed project is done; the completed list has them</div>`;
+    body.innerHTML = {
+      agreed: `<div class="empty">nothing waiting to start — every agreed project has been picked up</div>`,
+      in_progress: `<div class="empty">nothing in progress — the model marks a project in progress as it works</div>`,
+      review: `<div class="empty">nothing asking for done — the model asks here when it thinks the plan's
+           "what done looks like" was met; you confirm</div>`,
+      done: `<div class="empty">nothing completed yet — done is confirmed here, once the plan's
+           "what done looks like" was met</div>`,
+    }[PROJ_VIEW];
     return;
   }
   body.innerHTML = shown.map(projectCardHtml).join("");
