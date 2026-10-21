@@ -56,7 +56,7 @@ def test_say_sends_the_words_keeps_the_clip_and_returns_where(tmp_path):
     assert path == "/api/v1/speak" and body == {"text": "Hi, it's me.", "voice": "wren", "holder": "workbench-say"}
     p = Path(out["file"])
     assert p.read_bytes() == WAV and p.parent == tmp_path / dt.date.today().isoformat()
-    assert p.name.endswith("-hi-it-s-wren.wav")
+    assert p.name.endswith("-hi-it-s-me.wav")
     note = json.loads(p.with_suffix(".json").read_text())
     assert note["said"] == "Hi, it's me." and note["why"] == "a first hello" and note["backend"] == "qwen3tts"
     assert note["model"] == "Qwen/Qwen3-TTS-12Hz-1.7B-Base" and note["seconds"] == 4.1
