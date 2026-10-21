@@ -10,7 +10,7 @@
 #  folder, one subfolder a day, each picture with a note beside it (what was
 #  asked, why, the model, the LoRAs, the seed - enough to draw it again).
 #
-#  FREE, WITH A BUDGET (14 Oct 2026). Chad's word was "make any and all art
+#  FREE, WITH A BUDGET (14 Oct 2026). The owner's word was "make any and all art
 #  you want to whenever you want to" - so no asking. A box with one image
 #  model on a shared GPU still has limits a model in the mood could walk
 #  past, so the config sets them and the model cannot talk its way around:
@@ -71,7 +71,7 @@ MAKE_IMAGE_TOOL_DEF = {
         "type": "object",
         "properties": {
             "prompt": {"type": "string", "description": "What to draw, in words."},
-            "why": {"type": "string", "description": "What it is for (kept in its note): 'the morning message', 'for Chad'..."},
+            "why": {"type": "string", "description": "What it is for (kept in its note): 'the morning message', 'for the house'..."},
             "model": {"type": "string", "description": "A model's file name from image_options. Blank: Krea 2 Turbo."},
             "loras": {"type": "array", "description": "LoRAs to wear: [{name, weight}] - weight 0.3-1.0 usually.",
                       "items": {"type": "object", "properties": {"name": {"type": "string"}, "weight": {"type": "number"}},

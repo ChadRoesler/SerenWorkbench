@@ -60,7 +60,7 @@ async function refreshSummary() {
       // Just the count, like Memory's embedder and Loci's finder pill: the
       // version is on the Config tab and in the shell's subtitle.
       pill.className = "head-pill hot";     // lit in the accent, like the Callosum's fan pill
-      pill.textContent = `tools: ${data.tools_count}`;   // "tools: 99" (Chad, 20 Oct 2026)
+      pill.textContent = `tools: ${data.tools_count}`;   // "tools: 99" (20 Oct 2026)
     }
     // A pip on the tab when something is waiting on you. Someone asked for a
     // capability; that shouldn't need you to go looking for it.
@@ -741,7 +741,7 @@ function projectView(p) {
 }
 
 // The project bar: four tabs that flow like the tabs on top, one per stage,
-// the count in a pip (Chad, 20 Oct 2026: "split out agreed and in progress,
+// the count in a pip (20 Oct 2026: "split out agreed and in progress,
 // add review ... spaced evenly"). It grew out of the 17 Oct doodle's
 // "▶ 1 agreed  1 in progress  X completed" capsule, which read as cluttered.
 function projectBarHtml() {

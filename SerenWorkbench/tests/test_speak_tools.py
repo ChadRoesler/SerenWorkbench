@@ -50,15 +50,15 @@ def config(folder: Path) -> McpConfig:
 
 def test_say_sends_the_words_keeps_the_clip_and_returns_where(tmp_path):
     fake = FakeLodestar()
-    out = json.loads(run(st.say("Hi, it's Wren.", why="a first hello", runtime_host=fake.client(), config=config(tmp_path))))
+    out = json.loads(run(st.say("Hi, it's me.", why="a first hello", runtime_host=fake.client(), config=config(tmp_path))))
     assert out["ok"] and out["voice"] == "wren" and out["node"] == "bigbox" and out["clip_seconds"] == 4.9
     (path, body), = fake.seen
-    assert path == "/api/v1/speak" and body == {"text": "Hi, it's Wren.", "voice": "wren", "holder": "workbench-say"}
+    assert path == "/api/v1/speak" and body == {"text": "Hi, it's me.", "voice": "wren", "holder": "workbench-say"}
     p = Path(out["file"])
     assert p.read_bytes() == WAV and p.parent == tmp_path / dt.date.today().isoformat()
     assert p.name.endswith("-hi-it-s-wren.wav")
     note = json.loads(p.with_suffix(".json").read_text())
-    assert note["said"] == "Hi, it's Wren." and note["why"] == "a first hello" and note["backend"] == "qwen3tts"
+    assert note["said"] == "Hi, it's me." and note["why"] == "a first hello" and note["backend"] == "qwen3tts"
     assert note["model"] == "Qwen/Qwen3-TTS-12Hz-1.7B-Base" and note["seconds"] == 4.1
 
 

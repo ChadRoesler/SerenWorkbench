@@ -93,11 +93,11 @@ def test_listen_refuses_what_is_not_a_wav_on_this_box(tmp_path):
 def test_an_audition_speaks_each_voice_keeps_the_clips_and_compares_them(tmp_path, monkeypatch):
     fake, kokoro = FakeLodestar(), FakeKokoro()
     monkeypatch.setattr(lt, "KOKORO_TRANSPORT", httpx.MockTransport(kokoro.handler))
-    out = json.loads(run(lt.audition("Hi, I am Wren.", ["af_heart", "af_heart(0.7)+af_bella(0.3)"], why="picking a voice",
+    out = json.loads(run(lt.audition("Hi, I am here.", ["af_heart", "af_heart(0.7)+af_bella(0.3)"], why="picking a voice",
                                      question="which is warmer?", runtime_host=fake.client(), config=config(tmp_path))))
-    assert out["ok"] and out["said"] == "Hi, I am Wren."
+    assert out["ok"] and out["said"] == "Hi, I am here."
     assert [a["voice"] for a in kokoro.asked] == ["af_heart", "af_heart(0.7)+af_bella(0.3)"]
-    assert kokoro.asked[0] == {"model": "kokoro", "voice": "af_heart", "input": "Hi, I am Wren.",
+    assert kokoro.asked[0] == {"model": "kokoro", "voice": "af_heart", "input": "Hi, I am here.",
                                "response_format": "wav", "speed": 1.0}
     paths = [p for p, _ in fake.seen]
     assert paths[0] == "/api/v1/service/kokoro/ensure" and paths[1] == "/api/v1/service/kokoro/release", "woken, let go before the listening"

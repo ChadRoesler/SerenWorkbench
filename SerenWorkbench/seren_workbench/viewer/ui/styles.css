@@ -8,7 +8,7 @@
  * ════════════════════════════════════════════════════════════════════ */
 
 :root {
-  /* Pale aqua since 20 Oct 2026 (Chad: "change the accent color, so that
+  /* Pale aqua since 20 Oct 2026 (the ask: "change the accent color, so that
      it's more... big? readable as a color?: #afdbdb"). The cool grey it
      replaced (#8e9aaf) read as no colour at all next to the family's. */
   --accent:    #afdbdb;   /* pale aqua */
@@ -165,7 +165,7 @@
 /* overflow: hidden on every rounded card (.tool-card, .state-card, .tbox) -
    their heads paint a square hover background inside a rounded border, so
    the fill's corners poked out past the radius on every hover ("sharp
-   corners over the rounded edges", Chad, 20 Oct 2026). Clipping at the card
+   corners over the rounded edges", 20 Oct 2026). Clipping at the card
    is the fix that holds for whatever gets a background inside one later.
    Nothing in a card needs to overflow: the toggle focus ring and the hover
    ring sit inside the body padding, and the filter/select controls live in
@@ -481,16 +481,16 @@ table.logs tr.err-detail td {
    The bar is the list's own heading: the open work on one side, what is
    done on the other, the ▶ on whichever is showing. */
 .panel-header .info .cabinet-path { font-family: var(--mono); color: var(--text); word-break: break-all; }
-/* Tab-shaped since 20 Oct 2026 (Chad: "it should look kinda tab like ...
+/* Tab-shaped since 20 Oct 2026 (the ask: "it should look kinda tab like ...
    cutie's choice"): the same underline tabs the shell draws at the top of
    every viewer, one level down. The open list is the lit tab; the other
    is a tab you can click. No box, no caret. */
 .proj-bar { display: flex; gap: 2px; margin: 6px 0 14px; border-bottom: 1px solid var(--border); }
 /* Four tabs, each the same width, the count in a pip: agreed, in progress,
-   review (asking for done), completed. Chad, 20 Oct 2026: "split out agreed
+   review (asking for done), completed. 20 Oct 2026: "split out agreed
    and in progress, add review ... flow like the tabs on top ... spaced evenly". */
 /* border-radius 0: the shell rounds every button, and a rounded button's
-   bottom border is a capsule curve, not a tab's underline (Chad, 20 Oct
+   bottom border is a capsule curve, not a tab's underline (20 Oct
    2026: "straight line rather than a capsule curved line"). A zero count
    draws no badge. */
 .proj-bar .proj-view { flex: 1 1 0; justify-content: center; display: flex; align-items: center; gap: 8px; padding: 9px 14px 8px; border-radius: 0;
