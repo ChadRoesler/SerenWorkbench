@@ -26,7 +26,7 @@ class FakeLodestar:
                           dict(request.url.params)))
         if request.url.path == "/api/v1/image":
             n = (self.seen[-1][2] or {}).get("count", 1)
-            body = self.body or {"ok": True, "node": "xavier32gb", "model": "checkpoints/krea2Turbo.safetensors",
+            body = self.body or {"ok": True, "node": "node-c", "model": "checkpoints/krea2Turbo.safetensors",
                                  "prompt": "storybook folk art illustration, a wren", "negative": "", "seed": 42,
                                  "loras": [{"name": "Storybook_Folk_Art_Krea2.safetensors", "weight": 0.7, "fit": "good"}],
                                  "width": 1024, "height": 1024, "seconds": 31.5,
@@ -34,11 +34,11 @@ class FakeLodestar:
                                              "data": base64.b64encode(b"PNG%d" % i).decode()} for i in range(n)]}
             return httpx.Response(self.status, json=body)
         if request.url.path == "/api/v1/comfy/catalog":
-            return httpx.Response(200, json={"node": "spark128gb", "nodes": [
-                {"node": "spark128gb", "families": [], "summary": {"lora": {"Krea 2": 17}}},
-                {"node": "xavier32gb", "families": ["sdxl", "sd15"], "summary": {"lora": {"Krea 2": 17}}}], "files": {
+            return httpx.Response(200, json={"node": "node-d", "nodes": [
+                {"node": "node-d", "families": [], "summary": {"lora": {"Krea 2": 17}}},
+                {"node": "node-c", "families": ["sdxl", "sd15"], "summary": {"lora": {"Krea 2": 17}}}], "files": {
                 "checkpoints/krea2Turbo.safetensors": {"role": "checkpoint", "name": "krea2Turbo.safetensors", "arch": "krea2",
-                                                       "kind": "image", "drawable_on": ["spark128gb"]},
+                                                       "kind": "image", "drawable_on": ["node-d"]},
                 "diffusion_models/wan22.safetensors": {"role": "diffusion", "name": "wan22.safetensors", "arch": "wan",
                                                        "kind": "video", "drawable_on": []},
                 "loras/x.safetensors": {"role": "lora", "name": "x.safetensors", "arch": "krea2"}}})
@@ -114,7 +114,7 @@ def test_the_options_list_models_and_what_fits(tmp_path):
     fake = FakeLodestar()
     out = json.loads(run(mi.image_options(runtime_host=fake.client())))
     assert [m["name"] for m in out["models"]] == ["krea2Turbo.safetensors", "wan22.safetensors"], "drawable first"
-    assert out["models"][0]["drawable_on"] == ["spark128gb"] and out["nodes"][1]["families"] == ["sdxl", "sd15"]
+    assert out["models"][0]["drawable_on"] == ["node-d"] and out["nodes"][1]["families"] == ["sdxl", "sd15"]
     fits = json.loads(run(mi.image_options(model="krea2Turbo.safetensors", runtime_host=fake.client())))
     assert fits["loras"] == [{"name": "x.safetensors", "fit": "good"}]
     assert fake.seen[-1][3] == {"model": "krea2Turbo.safetensors"}
@@ -137,10 +137,10 @@ def test_the_picture_goes_back_with_the_answer_not_only_a_path_on_this_box(tmp_p
     harness on the desktop. The answer is still the same JSON text, and it
     carries the picture itself for the MCP wrapper to send as an image."""
     from seren_workbench.models.tools.rich_result import WithImages
-    body = {"ok": True, "node": "spark128gb", "model": "m", "seed": 7, "seconds": 30.0,
+    body = {"ok": True, "node": "node-d", "model": "m", "seed": 7, "seconds": 30.0,
             "images": [{"mime": "image/png", "data": base64.b64encode(PNG).decode()}]}
     out = run(mi.make_image("a wren", runtime_host=FakeLodestar(body=body).client(), config=config(tmp_path)))
-    assert isinstance(out, WithImages) and json.loads(out)["shown"] == 1 and json.loads(out)["node"] == "spark128gb"
+    assert isinstance(out, WithImages) and json.loads(out)["shown"] == 1 and json.loads(out)["node"] == "node-d"
     assert out.images == [(PNG, "png")]
     # not a picture (the fake's b"PNG0"): kept on disk, not shown
     out = run(mi.make_image("a wren", runtime_host=FakeLodestar().client(), config=config(tmp_path)))

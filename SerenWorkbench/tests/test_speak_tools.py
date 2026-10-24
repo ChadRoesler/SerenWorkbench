@@ -64,9 +64,9 @@ def test_say_sends_the_words_keeps_the_clip_and_returns_where(tmp_path):
 
 def test_a_name_names_the_file_and_a_voice_is_passed_through(tmp_path):
     fake = FakeLodestar()
-    out = json.loads(run(st.say("Good morning.", voice="wren-late", name="good morning chad",
+    out = json.loads(run(st.say("Good morning.", voice="wren-late", name="good morning alice",
                                 runtime_host=fake.client(), config=config(tmp_path))))
-    assert out["ok"] and Path(out["file"]).name.endswith("-good-morning-chad.wav")
+    assert out["ok"] and Path(out["file"]).name.endswith("-good-morning-alice.wav")
     assert fake.seen[0][1]["voice"] == "wren-late"
 
 

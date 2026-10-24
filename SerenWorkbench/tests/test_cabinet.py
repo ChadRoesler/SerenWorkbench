@@ -72,8 +72,8 @@ def test_the_env_can_set_it(monkeypatch, tmp_path):
 
 
 @pytest.mark.parametrize("path", [
-    "/mnt/nvme/seren/wren/stores/workbench/projects", r"C:\Users\Caesar\seren\wren\projects",
-    "C:/Users/Caesar/projects", r"\\nas\share\projects", "~", "~/projects", DESK,
+    "/mnt/nvme/seren/wren/stores/workbench/projects", r"C:\Users\alice\seren\wren\projects",
+    "C:/Users/alice/projects", r"\\nas\share\projects", "~", "~/projects", DESK,
 ])
 def test_check_cabinet_takes_absolute_and_home_paths(path):
     assert P.check_cabinet(path) == path
