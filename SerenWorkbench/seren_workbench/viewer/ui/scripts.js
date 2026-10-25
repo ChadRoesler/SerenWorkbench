@@ -128,7 +128,7 @@ function groupHtml(tab, box, label, countLabel, inner, badges, forced) {
   return `
     <div class="tbox ${open ? "expanded" : ""}" data-box="${escapeHtml(boxKey(tab, box))}">
       <div class="tbox-head">
-        <span class="caret">▸</span>
+        <span class="caret seren-chev"></span>
         <span class="tbox-name">${escapeHtml(label)}</span>
         ${badges || ""}
         <span class="tbox-count">${escapeHtml(countLabel)}</span>
@@ -215,7 +215,7 @@ function toolCardHtml(t) {
   return `
     <div class="tool-card">
       <div class="card-head">
-        <span class="caret">▸</span>
+        <span class="caret seren-chev"></span>
         <span class="name">${escapeHtml(t.display_name || t.name)}</span>
         ${enabledBadge} ${typeBadge}
       </div>
@@ -317,7 +317,7 @@ function stateCardHtml(t) {
   return `
     <div class="state-card">
       <div class="state-head">
-        <span class="state-caret">▸</span>
+        <span class="state-caret seren-chev"></span>
         <span class="state-name">${escapeHtml(t.display_name || t.name)}</span>
         ${badge}
       </div>
@@ -445,7 +445,7 @@ function proposalCardHtml(p, nested = false) {
         <button class="btn-reject" data-reject="${escapeHtml(p.id)}">reject with critique</button>
       </div>` : "";
   const detailLabel = kind === "project" || kind === "revision"
-    ? "show the contract ▾" : "show what it would run ▾";
+    ? "show the contract <span class=\"seren-chev\"></span>" : "show what it would run <span class=\"seren-chev\"></span>";
   const planBtn = (kind === "project" || kind === "revision")
     ? `<button data-plan="${escapeHtml(p.id)}">read the plan</button>` : "";
   const contract = kind === "project" ? projectSummaryHtml(p.project || {})
@@ -453,7 +453,7 @@ function proposalCardHtml(p, nested = false) {
   return `
     <div class="tool-card prop-card${nested ? " prop-nested" : ""}" id="card-${escapeHtml(p.id)}">
       <div class="card-head prop-head">
-        <span class="caret">▸</span>
+        <span class="caret seren-chev"></span>
         <span class="name">${escapeHtml(p.title || (p.tool_names || []).join(", ") || "(unnamed)")}</span>
         <span class="badge ${cls}">${escapeHtml(p.status)}</span>
         ${kindBadge}${family}${attempt}${final}
@@ -840,7 +840,7 @@ function projectCardHtml(p) {
   return `
     <div class="tool-card proj-card" id="proj-${escapeHtml(p.name)}">
       <div class="card-head proj-head">
-        <span class="caret">▸</span>
+        <span class="caret seren-chev"></span>
         <span class="name">${escapeHtml(p.title || p.name)}</span>
         <span class="badge ${STATUS_CLS[st] || "kind"}">${escapeHtml(st.replace("_", " "))}</span>
         ${asking}
@@ -859,7 +859,7 @@ function projectCardHtml(p) {
         </div>
         <div class="prop-plan">
           <button data-proj-plan="${escapeHtml(p.name)}">read the plan</button>
-          <button data-proj-journal="${escapeHtml(p.name)}">open the journal ▾</button>
+          <button data-proj-journal="${escapeHtml(p.name)}">open the journal <span class="seren-chev"></span></button>
         </div>
         <div class="journal" id="journal-${escapeHtml(p.name)}"></div>
         <div class="prop-actions">${actions.join("")}</div>

@@ -59,57 +59,18 @@
 }
 .panel-header .ctrls { display: flex; gap: 6px; align-items: center; }
 
-/* filter + refresh controls */
+/* filter + refresh controls. The field and the combo box are the family's
+   (seren_meninges tokens.css: one size, one corner, the arrow inset as far as
+   the text, 24 Oct 2026: "check parity on combo boxes"); only their width and
+   the monospace stay here. */
 .filter {
-  background: var(--bg-soft);
-  border: 1px solid var(--border-soft);
-  color: var(--text);
-  padding: 4px 10px;
-  border-radius: 7px;
-  font-size: 0.82em;
   font-family: var(--mono);
   width: 220px;
   max-width: 42vw;
-  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
 }
-.filter::placeholder { color: var(--text-mute); }
-.filter:focus {
-  outline: none;
-  background: var(--surface);
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(175,219,219,0.12);
-}
-/* Select in a panel header — matches .filter exactly.
-   The native control was shipped UNSTYLED, so the browser drew its own
-   chevron hard against the border inside a themed panel. appearance:none
-   drops that arrow and we paint our own, inset the same 10px as the text
-   padding, with padding-right reserving room so a long option ("superseded")
-   never runs underneath it. The chevron is an inline SVG: a data URI can't
-   read a CSS variable, so its stroke is --slate spelled out (%23 is '#'). */
 .ctrls select {
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  background-color: var(--bg-soft);
-  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="%2394a3b8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="2.5,4.5 6,8 9.5,4.5"/></svg>');
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  border: 1px solid var(--border-soft);
-  color: var(--text);
-  padding: 4px 30px 4px 10px;
-  border-radius: 7px;
-  font-size: 0.82em;
   font-family: var(--mono);
   min-width: 132px;              /* fits "superseded" without squeezing */
-  cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s, background-color 0.15s;
-}
-.ctrls select:hover { border-color: var(--accent); }
-.ctrls select:focus {
-  outline: none;
-  background-color: var(--surface);
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(175,219,219,0.12);
 }
 /* The popup list is drawn by the OS, which otherwise uses system colours —
    light-on-light and unreadable against this theme on Windows. */
@@ -192,8 +153,10 @@
   padding: 12px 14px; cursor: pointer; user-select: none;
 }
 .tool-card .card-head:hover { background: var(--surface-2); }
+/* the family's one chevron (seren-chev, from the shell): right when shut,
+   down when open */
 .tool-card .caret {
-  color: var(--text-mute); font-size: 0.75em; width: 10px;
+  color: var(--text-mute);
   transition: transform 0.15s, color 0.15s;
 }
 .tool-card.expanded .caret { color: var(--accent); transform: rotate(45deg); }
@@ -244,7 +207,7 @@
 }
 .state-card .state-head:hover { background: var(--surface-2); }
 .state-card .state-caret {
-  color: var(--text-mute); font-size: 0.75em; width: 10px;
+  color: var(--text-mute);
   transition: transform 0.15s, color 0.15s;
 }
 .state-card.expanded .state-caret { color: var(--accent); transform: rotate(45deg); }
@@ -330,7 +293,7 @@ table.params td.pdesc { color: var(--text-soft); }
 /* The caret is the only thing that rotates; nesting means several are on
    screen at once, so scope it to THIS group and not descendants. */
 .tbox > .tbox-head > .caret { transition: transform .12s ease; }
-.tbox.expanded > .tbox-head > .caret { transform: rotate(90deg); }
+.tbox.expanded > .tbox-head > .caret { transform: rotate(45deg); }
 /* One indent step per level, drawn with a rule so the nesting reads. */
 .tbox .tbox { margin-left: .5rem; border-left: 2px solid var(--accent, #e06c5a); }
 
