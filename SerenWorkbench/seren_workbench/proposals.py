@@ -72,6 +72,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
+from seren_sinew.atomic import write_json
 
 from . import projects as _proj
 
@@ -900,9 +901,7 @@ class ProposalStore:
         journal = self._read_journal(home)
         entry = {"id": len(journal) + 1, **entry}
         journal.append(entry)
-        tmp = home / ".journal.json.tmp"
-        tmp.write_text(json.dumps(journal, indent=2), encoding="utf-8")
-        os.replace(tmp, home / "journal.json")
+        write_json(home / "journal.json", journal)
         return entry
 
     def _home(self, name: str) -> Path:
@@ -1204,6 +1203,4 @@ class ProposalStore:
         self._dir.mkdir(parents=True, exist_ok=True)
         data = asdict(p)
         data.pop("manifest", None)          # lives in the .yaml, not twice
-        tmp = self._dir / f".{p.id}.json.tmp"
-        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        os.replace(tmp, self._dir / f"{p.id}.json")
+        write_json(self._dir / f"{p.id}.json", data)

@@ -55,7 +55,7 @@ from .routes import gallery as gallery_routes
 from seren_meninges import get_version
 from seren_meninges.auth import bearer_auth_middleware
 from seren_meninges.viewer import render_from_dir
-from seren_sinew.request_log import RequestLoggingMiddleware
+from seren_sinew.request_log import RequestLoggingMiddleware, request_id_hooks
 
 from . import __version__ as _fallback_version
 APP_VERSION = get_version("seren-workbench", fallback=_fallback_version)
@@ -182,7 +182,8 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
                 # 401'd with no config key to fix it.
                 token = svc.resolve_bearer(service) if service else ""
                 headers = {"Authorization": f"Bearer {token}"} if token else None
-                c = httpx.AsyncClient(base_url=base_url, timeout=timeout, headers=headers)
+                c = httpx.AsyncClient(base_url=base_url, timeout=timeout, headers=headers,
+                                      event_hooks=request_id_hooks(asynchronous=True))
                 await _stack.enter_async_context(c)
                 return c
 

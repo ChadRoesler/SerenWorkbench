@@ -59,7 +59,7 @@ dependencies = [
     # 1.10.0: seren_sinew.stores with rehearsal and restore (keeping.py).
     # 1.11.0: seren_sinew.orchestration, the ensure/release messages
     # (ensure_service_running, release_service).
-    "seren-sinew>=1.11.0,<6",
+    "seren-sinew>=5.3.0,<6",  # 5.3.0: request ids carried to the next hop (request_id_hooks / request_id_scope), seren_sinew.atomic
 ]
 
 [project.optional-dependencies]
@@ -70,6 +70,13 @@ dependencies = [
 # unknown extra only earns a "does not provide the extra" warning that trains
 # operators to ignore warnings.
 updates = []
+# The same for mcp. The MCP SDK has been a core dependency since 5.0.5, but
+# install records written by an older Starwright card still say
+# `seren-workbench[mcp]`, so every upgrade plan on such a box asked pip for an
+# extra no release defined and got "does not provide the extra 'mcp'" back -
+# the warning that blanked the Observatory's upgrade plan on 19 Oct 2026. An
+# empty alias makes the request true instead of noisy.
+mcp = []
 
 # Corporate / intercepting-proxy support. Routes Python TLS through the OS
 # trust store so a corp root CA (Zscaler/Netskope/etc.) is honored without

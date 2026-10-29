@@ -32,6 +32,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from seren_sinew.atomic import write_json
+
 log = logging.getLogger(__name__)
 STATE_FORMAT = 1
 
@@ -186,13 +188,7 @@ class ToolRegistry:
                    "tools": dict(self._persisted_tools),
                    "actions": dict(self._persisted_actions)}
         try:
-            parent = os.path.dirname(self._state_path)
-            if parent:
-                os.makedirs(parent, exist_ok=True)
-            tmp = self._state_path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(payload, f, indent=2, sort_keys=True)
-            os.replace(tmp, self._state_path)
+            write_json(self._state_path, payload, sort_keys=True)
             self.persist_error = ""
         except OSError as exc:
             self.persist_error = f"{exc}"
