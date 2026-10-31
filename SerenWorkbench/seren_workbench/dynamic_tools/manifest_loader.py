@@ -354,6 +354,7 @@ def _dict_to_manifest(d: dict | None) -> ManifestFile:
             bearer_token=_opt_str(cfg.get("bearer_token")),
             bearer_token_env=_opt_str(cfg.get("bearer_token_env")),
             bearer_token_keyring=_opt_str(cfg.get("bearer_token_keyring")),
+            local_config=_opt_str(cfg.get("local_config")),
         )
 
     tools_raw = d.get("tools")

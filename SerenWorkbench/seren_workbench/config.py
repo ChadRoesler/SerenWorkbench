@@ -101,11 +101,13 @@ class DashboardConfig:
     proposals_enabled: bool = True
     state_file: str = ""             # "" => <tools_dir>/.tool-state.json
     cabinet: str = ""                # "" => `projects` beside tools_dir; kept as written
+    tool_config_dir: str = ""        # "" => `customToolConfig` beside tools_dir
 
     def __post_init__(self) -> None:
         self.tools_dir = _expand(self.tools_dir)
         self.proposals_dir = _expand(self.proposals_dir)
         self.state_file = _expand(self.state_file)
+        self.tool_config_dir = _expand(self.tool_config_dir)
 
     def resolve_proposals_dir(self) -> str:
         return self.proposals_dir or os.path.join(self.tools_dir, "proposed")
@@ -121,6 +123,21 @@ class DashboardConfig:
         if written:
             return written
         return os.path.join(os.path.dirname(os.path.normpath(self.tools_dir)), "projects")
+
+    def resolve_tool_config_dir(self) -> str:
+        """Where a tool's DEPLOYMENT lives: one small yaml per name, read at
+        call time. A manifest is the reviewed contract and says only
+        `local_config: <name>`; this box's address for the service and the
+        secret it wants are in <tool_config_dir>/<name>.yaml, which the
+        operator edits without a restart and never shows a reviewer. The
+        alternative - a token per tool in the service's environment - means
+        a unit file that grows a line and needs a restart every time a tool
+        is added, which is fine for the two of us and nobody else. Beside
+        tools_dir, outside it, so the manifest loader never reads one."""
+        written = (self.tool_config_dir or "").strip()
+        if written:
+            return written
+        return os.path.join(os.path.dirname(os.path.normpath(self.tools_dir)), "customToolConfig")
 
     def resolve_plugins_dir(self) -> str:
         """Where an APPROVED plugin proposal is installed: one small yaml per
@@ -142,6 +159,7 @@ class DashboardConfig:
             proposals_enabled=bool(d.get("proposals_enabled", True)),
             state_file=str(d.get("state_file", "") or ""),
             cabinet=str(d.get("cabinet", "") or ""),
+            tool_config_dir=str(d.get("tool_config_dir", "") or ""),
         )
 
 

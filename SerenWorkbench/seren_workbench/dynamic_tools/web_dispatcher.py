@@ -23,11 +23,13 @@
 from __future__ import annotations
 
 import ipaddress
+import os
 import socket
 from typing import Dict, Optional, Tuple
 from urllib.parse import urlparse
 
 import httpx
+import yaml
 
 from .manifest_models import ManifestConfiguration, ToolInvoke
 from .param_subst import substitute_scalar, substitute_json_body
@@ -82,6 +84,55 @@ def _has_header(headers: Optional[Dict[str, str]], name: str) -> bool:
     return any(k.lower() == name.lower() for k in (headers or {}))
 
 
+def load_local_config(
+    file_config: ManifestConfiguration | None,
+    tool_config_dir: Optional[str],
+) -> Tuple[ManifestConfiguration | None, Optional[str]]:
+    """The file configuration with this box's <tool_config_dir>/<name>.yaml
+    laid over it, read NOW. Returns (config, error). No local_config named:
+    the manifest's own block, untouched. Read per call on purpose: the
+    operator edits the file and the next call uses it, no restart, same as
+    an env var would be - but a file, so adding a tool never grows the
+    service's unit file."""
+    if file_config is None or not file_config.local_config:
+        return file_config, None
+    from .manifest_models import LOCAL_CONFIG_KEYS, LOCAL_CONFIG_NAME_RE
+    import dataclasses
+    name = str(file_config.local_config).strip()
+    if not LOCAL_CONFIG_NAME_RE.fullmatch(name):
+        return None, (f"local_config '{name}' is not a name: letters, digits, dot, dash, "
+                      "underscore only - it is a file stem in the tool config dir, never a path.")
+    if not tool_config_dir:
+        return None, f"local_config '{name}' named but this Workbench has no tool config dir."
+    path = os.path.join(tool_config_dir, f"{name}.yaml")
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            raw = yaml.safe_load(fh) or {}
+    except FileNotFoundError:
+        return None, (f"local_config '{name}': no file at {path}. The operator writes it "
+                      f"(keys: {', '.join(LOCAL_CONFIG_KEYS)}); nothing else creates it.")
+    except (OSError, yaml.YAMLError) as ex:
+        return None, f"local_config '{name}': could not read {path}: {ex}"
+    if not isinstance(raw, dict):
+        return None, f"local_config '{name}': {path} is not a mapping."
+    unknown = sorted(k for k in raw if k not in LOCAL_CONFIG_KEYS)
+    if unknown:
+        return None, (f"local_config '{name}': {path} sets {', '.join(unknown)}; "
+                      f"only {', '.join(LOCAL_CONFIG_KEYS)} may be set there.")
+    merged = dataclasses.replace(file_config)
+    set_here = {k: str(raw[k]).strip() for k in LOCAL_CONFIG_KEYS
+                if raw.get(k) is not None and str(raw[k]).strip()}
+    if any(k.startswith("bearer_token") for k in set_here):
+        # The file's credential REPLACES the manifest's, whichever kind each
+        # is: resolve_token ranks inline over keyring over env, so leaving
+        # the manifest's inline literal in place would beat the file's env
+        # pointer, and "the file wins" would be a lie.
+        merged.bearer_token = merged.bearer_token_env = merged.bearer_token_keyring = None
+    for k, v in set_here.items():
+        setattr(merged, k, v)
+    return merged, None
+
+
 async def invoke_web(
     invoke: ToolInvoke,
     file_config: ManifestConfiguration | None,
@@ -90,12 +141,20 @@ async def invoke_web(
     param_types: Dict[str, str],
     http_client: httpx.AsyncClient,
     self_addr: Optional[Tuple[str, int]] = None,
+    tool_config_dir: Optional[str] = None,
 ) -> dict:
     """Make an HTTP call per the tool's invoke config.
 
     Returns a dict suitable as an MCP CallToolResult. *self_addr* is this
     Workbench's own (host, port); a target that resolves to it is refused.
+    *tool_config_dir* is where a `local_config:` name is looked up, per call.
     """
+    file_config, cfg_error = load_local_config(file_config, tool_config_dir)
+    if cfg_error:
+        return _error(f"tool '{tool_name}': {cfg_error}",
+                      hint="the manifest names a local config this box does not have yet, "
+                           "or has wrong; a person fixes the file, nothing here can.")
+
     # Resolve base URL
     base_url = invoke.base_url or (file_config.base_url if file_config else None)
     if not base_url:

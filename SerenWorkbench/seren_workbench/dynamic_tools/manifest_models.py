@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
@@ -41,6 +42,15 @@ class ManifestAuthor:
     contact: Optional[str] = None
 
 
+# A local_config name is a file stem, never a path: letters, digits, dot,
+# dash, underscore, not starting with a dot. Anything with a separator in it
+# is refused at dispatch so a manifest cannot name a file outside the dir.
+LOCAL_CONFIG_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
+
+# The keys a <tool_config_dir>/<name>.yaml may set.
+LOCAL_CONFIG_KEYS = ("base_url", "bearer_token", "bearer_token_env", "bearer_token_keyring")
+
+
 @dataclass
 class ManifestConfiguration:
     """Tool-set-wide defaults; tools can override per-invoke.
@@ -52,12 +62,21 @@ class ManifestConfiguration:
     so the secret is never stored in the parsed manifest. This is how a
     tool reaches a service that wants a token WITHOUT the token being a
     parameter the model has to hold and hand over on every call.
+
+    local_config is the fourth way, and the one for a tool that is reviewed
+    in one place and deployed in another: a NAME, resolved at call time to
+    <tool_config_dir>/<name>.yaml on the box the Workbench runs on. That
+    file may set base_url and any of the three bearer pointers, and what it
+    sets wins over the manifest. The manifest then carries no address and
+    no pointer to this box's environment, and the operator changes either
+    by editing a file, with no restart and no reviewer involved.
     """
     cwd: Optional[str] = None
     base_url: Optional[str] = None
     bearer_token: Optional[str] = None
     bearer_token_env: Optional[str] = None
     bearer_token_keyring: Optional[str] = None
+    local_config: Optional[str] = None
 
     @property
     def has_bearer(self) -> bool:
@@ -65,6 +84,8 @@ class ManifestConfiguration:
 
     def credential_label(self) -> str:
         """Which pointer is set, for a reviewer. Never the value."""
+        if self.local_config:
+            return f"local:{self.local_config}" + (" (and a pointer in the manifest)" if self.has_bearer else "")
         if self.bearer_token:
             return "inline literal"
         if self.bearer_token_keyring:

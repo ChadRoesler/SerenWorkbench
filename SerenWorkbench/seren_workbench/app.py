@@ -224,6 +224,7 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
                 "proposals": app.state.proposals,
                 "_dynamic_web_client": _general,
                 "_self_addr": self_addr,
+                "_tool_config_dir": cfg.dashboard.resolve_tool_config_dir(),
             }
 
             # Mount the MCP surface — conditionally, so a missing `mcp`

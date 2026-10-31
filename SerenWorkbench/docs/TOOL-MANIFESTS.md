@@ -108,6 +108,35 @@ header then sends `Bearer <value>`, resolved *at call time* - rotate the
 variable and the next call uses the new one. Same three pointers, same
 precedence, as every `server:` block in the Seren family.
 
+### A tool reviewed here, deployed there: `local_config`
+
+The three pointers above put this box's environment in the manifest: the
+name of an env var the service has to be started with, so adding a tool
+means a line in a unit file and a restart. Fine for one operator, no good
+for the next. The fourth way names a **file**, not a variable:
+
+```yaml
+configuration:
+  local_config: sdb          # <tool_config_dir>/sdb.yaml on this box
+```
+
+`tool_config_dir` is a Workbench setting (`dashboard.tool_config_dir`,
+default `customToolConfig` beside `tools_dir`). The file there is the
+deployment of that manifest on this box, and may set exactly four keys,
+each winning over the manifest's own:
+
+```yaml
+# stores/workbench/customToolConfig/sdb.yaml  (chmod 600; never reviewed)
+base_url: http://caesarsworkshop.tail6263ef.ts.net:7440
+bearer_token: "..."              # or bearer_token_env / bearer_token_keyring
+```
+
+It is read on **every call**, so editing it takes effect on the next one
+and nothing needs restarting. The name is a file stem, never a path: a
+slash in it is refused at dispatch. A manifest that names a file this box
+does not have fails its call with the path it looked at, which is the
+operator's cue, not the model's problem to solve.
+
 ### One place a web tool can't point
 
 A tool whose target is the Workbench's own listener is refused - at propose

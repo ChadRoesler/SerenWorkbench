@@ -499,6 +499,8 @@ def make_dynamic_registrar(registry, di_registry, audit_log=None):
     # (host, port) this Workbench listens on, so a web tool aimed back at it
     # is refused at dispatch. Absent in bare test registries = no guard.
     self_addr = di_registry.get("_self_addr")
+    # Where `local_config:` names resolve (dashboard.tool_config_dir).
+    tool_config_dir = di_registry.get("_tool_config_dir")
 
     def _register_one(mcp, tool) -> None:
         if tool.type != "dynamic" or tool.entry is None:
@@ -510,6 +512,7 @@ def make_dynamic_registrar(registry, di_registry, audit_log=None):
             http_client=web_client,
             audit_log=log,
             self_addr=self_addr,
+            tool_config_dir=tool_config_dir,
         )
         _register_dispatched(mcp, dispatched, tool, registry)
 

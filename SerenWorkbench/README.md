@@ -61,6 +61,11 @@ services:
   # memory_bearer_token_env: SEREN_MEMORY_TOKEN  # or per service
 ```
 
+A tool manifest that says `local_config: <name>` gets its address and token
+from `<tool_config_dir>/<name>.yaml` on this box, read per call (so no
+restart when it changes): `dashboard.tool_config_dir`, default
+`customToolConfig` beside `tools_dir`. See docs/TOOL-MANIFESTS.md.
+
 ---
 
 ## Adding your own tools
