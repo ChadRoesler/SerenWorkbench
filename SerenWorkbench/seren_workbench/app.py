@@ -95,7 +95,7 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
             PROPOSE_PROJECT_TOOL_DEF["name"], PROPOSE_REVISION_TOOL_DEF["name"],
             LIST_PROJECTS_TOOL_DEF["name"], PROJECT_LOG_TOOL_DEF["name"],
         }
-        # The body's tools: absent when `soma.enabled` is off, like proposals.
+        # The body's tools: absent when `soma.enabled` is off or no robot_url is set, like proposals.
         from .models.tools import soma_tools as _soma
         soma_tool_names = {v["name"] for k, v in vars(_soma).items() if k.endswith("_TOOL_DEF")}
 
@@ -105,7 +105,7 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
             tools_enabled=cfg.dashboard.tools_enabled,
             tools_disabled=cfg.dashboard.tools_disabled,
             exclude=(set() if cfg.dashboard.proposals_enabled else proposal_tool_names)
-                    | (set() if cfg.soma.enabled else soma_tool_names),
+                    | (set() if cfg.soma.active else soma_tool_names),
             # Where a toggle is remembered so it is still in force after a
             # restart. Beside the manifests by default.
             state_path=cfg.dashboard.resolve_state_file(),
@@ -232,10 +232,12 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
             }
             # The body (soma_tools), when there is one: its robot and its voice
             # server, each with its own token, closed with everything else.
-            if cfg.soma.enabled:
+            if cfg.soma.active:
                 from seren_sinew.soma.client import SomaRobot, SomaVoice
-                _robot = SomaRobot(cfg.soma.robot_url, cfg.soma.token_for("robot"), timeout=svc.timeout_seconds)
-                _voice = SomaVoice(cfg.soma.voice_url, cfg.soma.token_for("voice"), timeout=svc.timeout_seconds)
+                # Sources, not strings: asked again on a 401, so a token rotated under a running
+                # Workbench (the voice server setting the robot up) is picked up without a restart.
+                _robot = SomaRobot(cfg.soma.robot_url, lambda: cfg.soma.token_for("robot"), timeout=svc.timeout_seconds)
+                _voice = SomaVoice(cfg.soma.voice_url, lambda: cfg.soma.token_for("voice"), timeout=svc.timeout_seconds)
                 _stack.push_async_callback(_robot.aclose)
                 _stack.push_async_callback(_voice.aclose)
                 app.state.di_registry["soma_robot"] = _robot

@@ -165,9 +165,18 @@ def test_switched_off_the_tools_are_absent(make_client, tmp_path):
     assert "soma_robot" not in c.app.state.di_registry
 
 
+def test_with_no_robot_set_the_tools_are_absent(make_client, tmp_path):
+    cfg = load_config(str(tmp_path / "none.yaml"))
+    cfg.dashboard.tools_dir = str(tmp_path / "tools")
+    assert cfg.soma.enabled and cfg.soma.robot_url == "" and not cfg.soma.active
+    c = make_client(cfg)
+    assert not any(n.startswith("soma_") for n in _tool_names(c))
+
+
 def test_switched_on_they_are_listed_and_wired(make_client, tmp_path):
     cfg = load_config(str(tmp_path / "none.yaml"))
     cfg.dashboard.tools_dir = str(tmp_path / "tools")
+    cfg.soma.robot_url = "http://10.0.0.9:8080"
     c = make_client(cfg)
     assert {"soma_status", "soma_say", "soma_pose"} <= _tool_names(c)
     assert isinstance(c.app.state.di_registry["soma_robot"], SomaRobot)

@@ -74,7 +74,7 @@ says so.
 ```yaml
 soma:
   enabled: true
-  robot_url: http://192.168.0.201:8080
+  robot_url: http://192.0.2.21:8080   # no robot_url: the tools aren't listed
   robot_token_file: ~/seren-soma/state/control_token
   voice_url: http://127.0.0.1:7480
   voice_token_file: ~/seren-soma/state/token

@@ -304,7 +304,7 @@ class SomaConfig:
     runs on).
     """
     enabled: bool = True
-    robot_url: str = "http://192.168.0.201:8080"
+    robot_url: str = ""        # no robot until one's given: until then the tools aren't listed
     robot_token: str = field(default="", repr=False)
     robot_token_env: str = ""
     robot_token_keyring: str = ""
@@ -328,6 +328,11 @@ class SomaConfig:
         return resolve_token(inline=getattr(self, f"{side}_token") or None,
                              keyring_ref=getattr(self, f"{side}_token_keyring") or None,
                              env_var=getattr(self, f"{side}_token_env") or None)
+
+    @property
+    def active(self) -> bool:
+        """On, and pointed at a robot: only then are the body's tools listed."""
+        return self.enabled and bool(self.robot_url)
 
     @classmethod
     def from_dict(cls, d: Optional[dict[str, Any]]) -> "SomaConfig":
