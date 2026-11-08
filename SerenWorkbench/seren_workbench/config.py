@@ -300,7 +300,7 @@ class SomaConfig:
     token as X-StackChan-Token, the voice server a bearer - so each has its own
     pointers: inline (the escape hatch), an env var's name, a keychain ref, or
     a file holding only the token (SerenSoma keeps both under
-    seren-voice/state/, which is the simple setup on the box the voice server
+    its state folder (~/seren-soma/state/), which is the simple setup on the box SerenSoma
     runs on).
     """
     enabled: bool = True

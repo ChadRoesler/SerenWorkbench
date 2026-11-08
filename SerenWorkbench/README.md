@@ -75,9 +75,9 @@ says so.
 soma:
   enabled: true
   robot_url: http://192.168.0.201:8080
-  robot_token_file: ~/SerenCore/SerenSoma/seren-voice/state/control_token
+  robot_token_file: ~/seren-soma/state/control_token
   voice_url: http://127.0.0.1:7480
-  voice_token_file: ~/SerenCore/SerenSoma/seren-voice/state/token
+  voice_token_file: ~/seren-soma/state/token
 ```
 
 Each side's token takes `_token_file`, `_token_env` (an env var's name),
