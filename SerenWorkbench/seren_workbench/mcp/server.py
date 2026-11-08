@@ -51,8 +51,11 @@ logger = logging.getLogger(__name__)
 # ProposalStore is here for the same reason the httpx clients are: propose_tool
 # needs it, and a DI param that ISN'T listed here leaks into the LLM-visible
 # schema as a phantom argument the model then tries to supply. ToolAuditLog
-# (list_my_tool_calls) and Holds (ensure_service_running) likewise.
-_DI_TYPES = (httpx.AsyncClient, McpConfig, ProposalStore, ToolAuditLog, Holds)
+# (list_my_tool_calls) and Holds (ensure_service_running) likewise. SomaRobot and
+# SomaVoice are the body's clients (soma_tools).
+from seren_sinew.soma.client import SomaRobot, SomaVoice  # noqa: E402
+
+_DI_TYPES = (httpx.AsyncClient, McpConfig, ProposalStore, ToolAuditLog, Holds, SomaRobot, SomaVoice)
 
 
 class ToolReportedError(RuntimeError):

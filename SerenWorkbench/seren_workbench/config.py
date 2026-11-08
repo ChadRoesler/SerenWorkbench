@@ -288,6 +288,66 @@ _TOKEN_KEYS = _token_keys()
 
 
 @dataclass
+class SomaConfig:
+    """The body: a SerenSoma robot and its voice server, reached by the soma_*
+    builtins (models/tools/soma_tools.py) through seren_sinew.soma.
+
+    A first-class part of the system, ON by default, and `enabled: false`
+    takes the tools away entirely: a body this Workbench doesn't have
+    shouldn't sit in the model's tool list failing every call.
+
+    The two sides authenticate differently - the robot takes its own control
+    token as X-StackChan-Token, the voice server a bearer - so each has its own
+    pointers: inline (the escape hatch), an env var's name, a keychain ref, or
+    a file holding only the token (SerenSoma keeps both under
+    seren-voice/state/, which is the simple setup on the box the voice server
+    runs on).
+    """
+    enabled: bool = True
+    robot_url: str = "http://192.168.0.201:8080"
+    robot_token: str = field(default="", repr=False)
+    robot_token_env: str = ""
+    robot_token_keyring: str = ""
+    robot_token_file: str = ""
+    voice_url: str = "http://127.0.0.1:7480"
+    voice_token: str = field(default="", repr=False)
+    voice_token_env: str = ""
+    voice_token_keyring: str = ""
+    voice_token_file: str = ""
+
+    def token_for(self, side: str) -> str:
+        """The token for "robot" or "voice", or "" for none."""
+        path = getattr(self, f"{side}_token_file")
+        if path:
+            try:
+                found = Path(os.path.expanduser(path)).read_text(encoding="utf-8").strip()
+                if found:
+                    return found
+            except OSError as ex:
+                log.warning("soma.%s_token_file %s can't be read (%s)", side, path, ex.strerror)
+        return resolve_token(inline=getattr(self, f"{side}_token") or None,
+                             keyring_ref=getattr(self, f"{side}_token_keyring") or None,
+                             env_var=getattr(self, f"{side}_token_env") or None)
+
+    @classmethod
+    def from_dict(cls, d: Optional[dict[str, Any]]) -> "SomaConfig":
+        d = d if isinstance(d, dict) else {}
+        out = cls()
+        enabled = d.get("enabled", out.enabled)
+        out.enabled = enabled.strip().lower() in ("1", "true", "yes", "on") if isinstance(enabled, str) else bool(enabled)
+        for f in ("robot_url", "voice_url"):
+            out_value = d.get(f)
+            if out_value:
+                setattr(out, f, str(out_value))
+        for side in ("robot", "voice"):
+            for suffix in ("token", "token_env", "token_keyring", "token_file"):
+                key = f"{side}_{suffix}"
+                if key in d:
+                    setattr(out, key, str(d.get(key) or ""))
+        return out
+
+
+@dataclass
 class ComponentsConfig:
     """Which of the standard components this Workbench passes through
     (seren_workbench.upstream). All on by default: the standard system is
@@ -492,6 +552,7 @@ class WorkbenchConfig:
     plugins: "list[PluginConfig]" = field(default_factory=list)
     backup: "BackupConfig" = field(default_factory=lambda: BackupConfig())
     updates: "UpdatesConfig" = field(default_factory=lambda: UpdatesConfig())
+    soma: "SomaConfig" = field(default_factory=lambda: SomaConfig())
     # The yaml file this config was loaded from (None = defaults/env only).
     # Threaded into McpConfig.load() so the server block and the tools block
     # always come from the SAME file — no CWD-vs-argv[0] split brain.
@@ -538,6 +599,12 @@ def _apply_env_overrides(cfg: WorkbenchConfig) -> WorkbenchConfig:
         cfg.services.scheduler_url = v
     if v := env.get("SEREN_WORKBENCH_UPDATES_ENABLED"):
         cfg.updates.enabled = v.lower() in ("1", "true", "yes", "on")
+    if v := env.get("SEREN_WORKBENCH_SOMA_ENABLED"):
+        cfg.soma.enabled = v.lower() in ("1", "true", "yes", "on")
+    if v := env.get("SEREN_WORKBENCH_SOMA_ROBOT_URL"):
+        cfg.soma.robot_url = v
+    if v := env.get("SEREN_WORKBENCH_SOMA_VOICE_URL"):
+        cfg.soma.voice_url = v
     # Outbound credentials: SEREN_WORKBENCH_SERVICES_BEARER_TOKEN[_ENV|_KEYRING]
     # for the shared one, SEREN_WORKBENCH_MEMORY_BEARER_TOKEN[...] and so on
     # per service. The plain SEREN_WORKBENCH_BEARER_TOKEN above is what THIS
@@ -581,9 +648,10 @@ def load_config(path: Optional[str] = None) -> WorkbenchConfig:
     plugins = PluginConfig.many_from_dict(data.get("plugins"))
     updates = UpdatesConfig.from_dict(data.get("updates"))
     backup = BackupConfig.from_dict(data.get("backup"))
+    soma = SomaConfig.from_dict(data.get("soma"))
 
     cfg = WorkbenchConfig(server=server, tls=tls, dashboard=dashboard,
                           services=services, components=components, plugins=plugins, updates=updates,
-                          backup=backup,
+                          backup=backup, soma=soma,
                           source_path=source_path)
     return _apply_env_overrides(cfg)

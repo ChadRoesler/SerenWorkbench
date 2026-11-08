@@ -61,6 +61,30 @@ services:
   # memory_bearer_token_env: SEREN_MEMORY_TOKEN  # or per service
 ```
 
+### A body
+
+A [SerenSoma](https://github.com/ChadRoesler/SerenSoma) robot is part of the
+system, so its tools are builtins: `soma_status`, `soma_pose`, `soma_say`,
+`soma_settings`, `soma_lights`, `soma_head` and `soma_touches` (the
+toolbox "Body"), through `seren_sinew.soma`. They're on by default; a
+Workbench with no body says `enabled: false` and they aren't listed at all.
+There is no camera tool: a photo is taken only when the person in the room
+says so.
+
+```yaml
+soma:
+  enabled: true
+  robot_url: http://192.168.0.201:8080
+  robot_token_file: ~/SerenCore/SerenSoma/seren-voice/state/control_token
+  voice_url: http://127.0.0.1:7480
+  voice_token_file: ~/SerenCore/SerenSoma/seren-voice/state/token
+```
+
+Each side's token takes `_token_file`, `_token_env` (an env var's name),
+`_token_keyring` or, as the escape hatch, `_token` inline.
+`SEREN_WORKBENCH_SOMA_ENABLED`, `_SOMA_ROBOT_URL` and `_SOMA_VOICE_URL`
+override the yaml.
+
 A tool manifest that says `local_config: <name>` gets its address and token
 from `<tool_config_dir>/<name>.yaml` on this box, read per call (so no
 restart when it changes): `dashboard.tool_config_dir`, default
