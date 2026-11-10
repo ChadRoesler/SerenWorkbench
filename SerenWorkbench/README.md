@@ -85,6 +85,29 @@ Each side's token takes `_token_file`, `_token_env` (an env var's name),
 `SEREN_WORKBENCH_SOMA_ENABLED`, `_SOMA_ROBOT_URL` and `_SOMA_VOICE_URL`
 override the yaml.
 
+### A kitchen
+
+A [SerenKitchen](https://github.com/ChadRoesler/SerenKitchen) is the board the
+people of a house and the model leave each other notes on: a fridge per app,
+sheets on the doors. Its tools are builtins too: `kitchen_wall`,
+`kitchen_fridge`, `kitchen_sheet`, `kitchen_leave`, `kitchen_reply`,
+`kitchen_tick` and `kitchen_stick` (the toolbox "Kitchen"). With no `url`
+they aren't listed; `enabled: false` takes them away. Everything they leave is
+signed with one name, `author` (blank: whatever the kitchen's house calls its
+partner), and no tool takes an author, so a call can never sign as the person.
+
+```yaml
+kitchen:
+  enabled: true
+  url: http://127.0.0.1:7431          # no url: the tools aren't listed
+  author: ada                         # blank: the house's partner
+  bearer_token_file: ~/seren-kitchen/token
+```
+
+The token takes `bearer_token_file`, `bearer_token_env`, `bearer_token_keyring`
+or, as the escape hatch, `bearer_token` inline. `SEREN_WORKBENCH_KITCHEN_ENABLED`,
+`_KITCHEN_URL` and `_KITCHEN_AUTHOR` override the yaml.
+
 A tool manifest that says `local_config: <name>` gets its address and token
 from `<tool_config_dir>/<name>.yaml` on this box, read per call (so no
 restart when it changes): `dashboard.tool_config_dir`, default

@@ -98,6 +98,9 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
         # The body's tools: absent when `soma.enabled` is off or no robot_url is set, like proposals.
         from .models.tools import soma_tools as _soma
         soma_tool_names = {v["name"] for k, v in vars(_soma).items() if k.endswith("_TOOL_DEF")}
+        # The kitchen's tools: absent when `kitchen.enabled` is off or no url is set.
+        from .models.tools import kitchen_tools as _kitchen
+        kitchen_tool_names = {v["name"] for k, v in vars(_kitchen).items() if k.endswith("_TOOL_DEF")}
 
         app.state.tool_registry = build_registry(
             mcp_config=mcp_config,
@@ -105,7 +108,8 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
             tools_enabled=cfg.dashboard.tools_enabled,
             tools_disabled=cfg.dashboard.tools_disabled,
             exclude=(set() if cfg.dashboard.proposals_enabled else proposal_tool_names)
-                    | (set() if cfg.soma.active else soma_tool_names),
+                    | (set() if cfg.soma.active else soma_tool_names)
+                    | (set() if cfg.kitchen.active else kitchen_tool_names),
             # Where a toggle is remembered so it is still in force after a
             # restart. Beside the manifests by default.
             state_path=cfg.dashboard.resolve_state_file(),
@@ -242,6 +246,12 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
                 _stack.push_async_callback(_voice.aclose)
                 app.state.di_registry["soma_robot"] = _robot
                 app.state.di_registry["soma_voice"] = _voice
+            # The kitchen (kitchen_tools), when there is one: its board, with the token asked for per call.
+            if cfg.kitchen.active:
+                from .models.tools.kitchen_tools import Kitchen
+                _board = Kitchen(cfg.kitchen.url, cfg.kitchen.token, author=cfg.kitchen.author, timeout=svc.timeout_seconds)
+                _stack.push_async_callback(_board.aclose)
+                app.state.di_registry["kitchen"] = _board
 
             # Mount the MCP surface — conditionally, so a missing `mcp`
             # package doesn't crash startup.

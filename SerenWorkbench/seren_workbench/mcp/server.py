@@ -52,10 +52,13 @@ logger = logging.getLogger(__name__)
 # needs it, and a DI param that ISN'T listed here leaks into the LLM-visible
 # schema as a phantom argument the model then tries to supply. ToolAuditLog
 # (list_my_tool_calls) and Holds (ensure_service_running) likewise. SomaRobot and
-# SomaVoice are the body's clients (soma_tools).
+# SomaVoice are the body's clients (soma_tools); Kitchen is the board's (kitchen_tools).
+# A client left off this list doesn't just leak: pydantic can't make a schema of it
+# and the WHOLE MCP mount fails, taking every tool with it.
 from seren_sinew.soma.client import SomaRobot, SomaVoice  # noqa: E402
+from ..models.tools.kitchen_tools import Kitchen  # noqa: E402
 
-_DI_TYPES = (httpx.AsyncClient, McpConfig, ProposalStore, ToolAuditLog, Holds, SomaRobot, SomaVoice)
+_DI_TYPES = (httpx.AsyncClient, McpConfig, ProposalStore, ToolAuditLog, Holds, SomaRobot, SomaVoice, Kitchen)
 
 
 class ToolReportedError(RuntimeError):
