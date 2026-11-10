@@ -39,14 +39,15 @@ class Body:
         if request.url.path == "/status":
             return httpx.Response(200, json={"ok": True, "device": False, "speaking": False})
         if request.url.path == "/settings":
-            return httpx.Response(200, json={"night": {}, "work_hours": {}, "overwhelm": {}, "night_now": True})
+            return httpx.Response(200, json={"night": {}, "work_hours": {}, "channel": {}, "night_now": True})
         if request.url.path == "/say":
             return httpx.Response(200, json={"ok": True, "seconds": 2.5})
         if request.url.path == "/touch":
             return httpx.Response(200, json={"events": [
                 {"seq": 4, "t": 1.0, "kind": "stroke", "way": "front_to_back", "t_ms": 1, "ms": 450, "showed": "loving"},
-                {"seq": 5, "t": 2.0, "kind": "touch_spot", "spot": "boop", "index": 0, "t_ms": 2, "ms": 0, "showed": None}],
-                "last": 5, "overwhelm": {"running": False, "progress": 0.0}})
+                {"seq": 5, "t": 2.0, "kind": "touch_spot", "spot": "boop", "index": 0, "t_ms": 2, "ms": 0, "showed": None},
+                {"seq": 6, "t": 3.0, "kind": "scritch", "t_ms": 3, "ms": 120, "showed": "laughing", "scratching": True}],
+                "last": 6, "hand": {"down": True, "from_ms": 1000, "to_ms": 4200}})
         return httpx.Response(404)
 
 
@@ -124,7 +125,9 @@ def test_touches_in_words(body):
     _, _, voice = body
     r = run(st.soma_touches(soma_voice=voice))
     assert r["touches"][0] == {"n": 4, "what": "stroke front to back", "ms": 450, "showed": "loving"}
-    assert r["touches"][1]["what"] == "screen: boop" and r["last"] == 5
+    assert r["touches"][1]["what"] == "screen: boop" and r["last"] == 6
+    assert r["touches"][2] == {"n": 6, "what": "scritch", "ms": 120, "showed": "laughing", "scratching": True}
+    assert r["hand"] == {"down": True, "seconds": 3.2}
 
 
 def test_no_body_configured_is_an_error_not_a_crash():

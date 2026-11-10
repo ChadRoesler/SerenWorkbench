@@ -59,7 +59,7 @@ dependencies = [
     # 1.10.0: seren_sinew.stores with rehearsal and restore (keeping.py).
     # 1.11.0: seren_sinew.orchestration, the ensure/release messages
     # (ensure_service_running, release_service).
-    "seren-sinew>=5.7.0,<6",  # 5.7.0: soma clients re-read a rotated token; 5.5.1: seren_sinew.soma (the body builtins' clients, head included); 5.3.0: request ids, atomic
+    "seren-sinew>=5.8.0,<6",  # 5.8.0: the touch feed's hand and scratching; 5.7.0: soma clients re-read a rotated token; 5.5.1: seren_sinew.soma (the body builtins' clients, head included); 5.3.0: request ids, atomic
 ]
 
 [project.optional-dependencies]

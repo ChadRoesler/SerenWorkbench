@@ -253,6 +253,9 @@ async def soma_touches(after: int = 0, soma_voice: SomaVoice = None, **kwargs) -
     for e in f.events[-50:]:
         what = {"stroke": f"stroke {(e.way or '').replace('_', ' ')}", "poke": f"poke {e.where}",
                 "touch_spot": f"screen: {e.spot}"}.get(e.kind, e.kind.replace("_", " "))
-        touches.append({"n": e.seq, "what": what, "ms": e.ms, "showed": "overwhelmed" if e.overwhelmed else e.showed})
+        touches.append({"n": e.seq, "what": what, "ms": e.ms, "showed": e.showed,
+                        **({"scratching": True} if e.scratching else {})})
+    hand = f.hand
+    held = round((hand.to_ms - hand.from_ms) / 1000, 1) if hand.down and hand.from_ms is not None else None
     return json.dumps({"touches": touches, "last": f.last,
-                       "overwhelm": {"running": f.overwhelm.running, "progress": f.overwhelm.progress}}, indent=2)
+                       "hand": {"down": True, "seconds": held} if hand.down else {"down": False}}, indent=2)
