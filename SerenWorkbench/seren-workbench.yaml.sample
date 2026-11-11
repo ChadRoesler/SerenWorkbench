@@ -179,6 +179,14 @@ updates:
   allow_prerelease: false      # true would offer you 2.0.0rc1
   # index_url: "https://pypi.org/pypi/{distribution}/json"   # private index?
 
+# The kitchen (SerenKitchen): the kitchen_* builtins. With no url the tools
+# aren't listed. `author` signs every sheet they leave; blank, the house's partner.
+kitchen:
+  enabled: true
+  url: ""
+  author: ""
+  bearer_token_file: ""
+
 tools:
   # -- search_the_web (WebTools.SearchTheWeb) --
   search_the_web:

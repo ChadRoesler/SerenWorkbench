@@ -353,6 +353,56 @@ class SomaConfig:
 
 
 @dataclass
+class KitchenConfig:
+    """The kitchen: the board the people of the house and this Workbench's model
+    leave each other notes on (SerenKitchen), reached by the kitchen_* builtins
+    (models/tools/kitchen_tools.py).
+
+    A first-class part of the system, ON by default; with no `url` the tools
+    aren't listed, and `enabled: false` takes them away entirely, like the body.
+
+    `author` is the name every sheet these tools leave is signed with. Blank, it
+    is whatever the kitchen's house calls its partner. No tool takes an author,
+    so a tool call can never sign as the person of the house.
+    """
+    enabled: bool = True
+    url: str = ""              # no kitchen until one's given: until then the tools aren't listed
+    author: str = ""
+    bearer_token: str = field(default="", repr=False)
+    bearer_token_env: str = ""
+    bearer_token_keyring: str = ""
+    bearer_token_file: str = ""
+
+    def token(self) -> str:
+        """The kitchen's bearer, or "" for none."""
+        if self.bearer_token_file:
+            try:
+                found = Path(os.path.expanduser(self.bearer_token_file)).read_text(encoding="utf-8").strip()
+                if found:
+                    return found
+            except OSError as ex:
+                log.warning("kitchen.bearer_token_file %s can't be read (%s)", self.bearer_token_file, ex.strerror)
+        return resolve_token(inline=self.bearer_token or None, keyring_ref=self.bearer_token_keyring or None,
+                             env_var=self.bearer_token_env or None)
+
+    @property
+    def active(self) -> bool:
+        """On, and pointed at a kitchen: only then are its tools listed."""
+        return self.enabled and bool(self.url)
+
+    @classmethod
+    def from_dict(cls, d: Optional[dict[str, Any]]) -> "KitchenConfig":
+        d = d if isinstance(d, dict) else {}
+        out = cls()
+        enabled = d.get("enabled", out.enabled)
+        out.enabled = enabled.strip().lower() in ("1", "true", "yes", "on") if isinstance(enabled, str) else bool(enabled)
+        for f in ("url", "author", "bearer_token", "bearer_token_env", "bearer_token_keyring", "bearer_token_file"):
+            if d.get(f):
+                setattr(out, f, str(d.get(f)).strip())
+        return out
+
+
+@dataclass
 class ComponentsConfig:
     """Which of the standard components this Workbench passes through
     (seren_workbench.upstream). All on by default: the standard system is
@@ -558,6 +608,7 @@ class WorkbenchConfig:
     backup: "BackupConfig" = field(default_factory=lambda: BackupConfig())
     updates: "UpdatesConfig" = field(default_factory=lambda: UpdatesConfig())
     soma: "SomaConfig" = field(default_factory=lambda: SomaConfig())
+    kitchen: "KitchenConfig" = field(default_factory=lambda: KitchenConfig())
     # The yaml file this config was loaded from (None = defaults/env only).
     # Threaded into McpConfig.load() so the server block and the tools block
     # always come from the SAME file — no CWD-vs-argv[0] split brain.
@@ -610,6 +661,12 @@ def _apply_env_overrides(cfg: WorkbenchConfig) -> WorkbenchConfig:
         cfg.soma.robot_url = v
     if v := env.get("SEREN_WORKBENCH_SOMA_VOICE_URL"):
         cfg.soma.voice_url = v
+    if v := env.get("SEREN_WORKBENCH_KITCHEN_ENABLED"):
+        cfg.kitchen.enabled = v.lower() in ("1", "true", "yes", "on")
+    if v := env.get("SEREN_WORKBENCH_KITCHEN_URL"):
+        cfg.kitchen.url = v
+    if v := env.get("SEREN_WORKBENCH_KITCHEN_AUTHOR"):
+        cfg.kitchen.author = v
     # Outbound credentials: SEREN_WORKBENCH_SERVICES_BEARER_TOKEN[_ENV|_KEYRING]
     # for the shared one, SEREN_WORKBENCH_MEMORY_BEARER_TOKEN[...] and so on
     # per service. The plain SEREN_WORKBENCH_BEARER_TOKEN above is what THIS
@@ -654,9 +711,10 @@ def load_config(path: Optional[str] = None) -> WorkbenchConfig:
     updates = UpdatesConfig.from_dict(data.get("updates"))
     backup = BackupConfig.from_dict(data.get("backup"))
     soma = SomaConfig.from_dict(data.get("soma"))
+    kitchen = KitchenConfig.from_dict(data.get("kitchen"))
 
     cfg = WorkbenchConfig(server=server, tls=tls, dashboard=dashboard,
                           services=services, components=components, plugins=plugins, updates=updates,
-                          backup=backup, soma=soma,
+                          backup=backup, soma=soma, kitchen=kitchen,
                           source_path=source_path)
     return _apply_env_overrides(cfg)
