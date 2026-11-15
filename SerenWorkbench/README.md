@@ -65,11 +65,13 @@ services:
 
 A [SerenSoma](https://github.com/ChadRoesler/SerenSoma) robot is part of the
 system, so its tools are builtins: `soma_status`, `soma_pose`, `soma_say`,
-`soma_settings`, `soma_lights`, `soma_head` and `soma_touches` (the
-toolbox "Body"), through `seren_sinew.soma`. They're on by default; a
+`soma_settings`, `soma_lights`, `soma_head`, `soma_touches`, `soma_heard`
+and `soma_talk` (the toolbox "Body"), through `seren_sinew.soma`. They're on by default; a
 Workbench with no body says `enabled: false` and they aren't listed at all.
 There is no camera tool: a photo is taken only when the person in the room
-says so.
+says so. For the same reason no tool opens the microphone: `soma_heard` reads
+what was heard while the person had it open, and `soma_talk` can end back and
+forth but not start it.
 
 ```yaml
 soma:

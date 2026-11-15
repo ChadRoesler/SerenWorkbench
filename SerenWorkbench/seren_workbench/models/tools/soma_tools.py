@@ -9,6 +9,8 @@
 #  soma_lights    light the rails
 #  soma_head      turn the head
 #  soma_touches   what hands have done to it lately, and what it showed
+#  soma_heard     what its microphone heard the person say, as text; can wait for it
+#  soma_talk      whether back and forth is on, and turning it OFF
 #
 #  Through seren_sinew.soma: the robot's control API and its voice server,
 #  each with its own token (config `soma:`). Switched off there, these tools
@@ -16,6 +18,13 @@
 #
 #  NO CAMERA TOOL, on purpose. A photo is taken only when the person in the
 #  room says so, and a tool call is not that person.
+#
+#  NO TOOL OPENS THE MICROPHONE, for the same reason. soma_say opens the
+#  channel deaf. Back and forth (the robot listening for a while without a
+#  tap) is started by the person: a tap, or Start on the body's own page.
+#  soma_talk can see it and can end it, because closing a microphone is
+#  always allowed; it cannot start it. soma_heard only reads what was heard
+#  while the person had it open.
 # ═══════════════════════════════════════════════════════════════
 
 from __future__ import annotations
@@ -34,7 +43,8 @@ MAX_SAY = 1000
 SOMA_STATUS_TOOL_DEF = {
     "name": "soma_status",
     "description": ("How my body is right now: the face it's wearing, battery, what each of the 12 rail LEDs "
-                    "shows (LEDs 0, 1, 6, 7 are the mic, reply and camera lights), its light / speaker / screen "
+                    "shows (LEDs 0, 1, 10, 11, the front two on each side, are the mic, reply and camera lights), "
+                    "its light / speaker / screen "
                     "settings and any night cap, the pose it rests in, whether its voice channel is open, and "
                     "whether it's night."),
     "input_schema": {"type": "object", "properties": {}},
@@ -74,7 +84,8 @@ SOMA_SETTINGS_TOOL_DEF = {
 SOMA_LIGHTS_TOOL_DEF = {
     "name": "soma_lights",
     "description": ("Light the rails: `color` (#rrggbb) for every LED, or `leds`, up to 12 #rrggbb from LED 0 "
-                    "(0-5 one rail, 6-11 the other). The mic, reply and camera lights show over whatever is set. "
+                    "(0-5 along one rail front to back, 6-11 back along the other). The mic, reply and camera "
+                    "lights show over whatever is set. "
                     "A pose with its own colour sets the rails again when it comes up."),
     "input_schema": {"type": "object", "properties": {
         "color": {"type": "string", "description": "#rrggbb for all of them, #000000 for off."},
@@ -95,6 +106,30 @@ SOMA_TOUCHES_TOOL_DEF = {
                     "poke and where, scritches, a resting hand, a screen spot), how long, and the face it brought "
                     "up; and how close a scratch is to tipping me over. `after`: only those after that number."),
     "input_schema": {"type": "object", "properties": {"after": {"type": "integer"}}},
+}
+SOMA_HEARD_TOOL_DEF = {
+    "name": "soma_heard",
+    "description": ("What my body's microphone heard the person say, as text, oldest first, each with how many "
+                    "seconds ago it was said. `after`: the `last` this gave before, passed back exactly as it "
+                    "came, so only what's new comes back; leave it out for everything heard since the voice "
+                    "server started. `wait`: hold up to that many seconds (25 at most) for something to be said "
+                    "and answer the moment it is. It only hears while its channel is open, which is the person's "
+                    "to open: a tap, or back and forth (soma_talk says whether that's on)."),
+    "input_schema": {"type": "object", "properties": {
+        "after": {"type": "string", "description": "The `last` from the call before. Blank: from the start."},
+        "wait": {"type": "integer", "description": "Seconds to wait for something new, 0 to 25."},
+    }},
+}
+SOMA_TALK_TOOL_DEF = {
+    "name": "soma_talk",
+    "description": ("Back and forth through my body: while it's on, the robot keeps listening without being "
+                    "tapped and my voice stays loaded, so I can hear with soma_heard and answer with soma_say. "
+                    "This says whether it's on, how long is left, and whether the robot is listening right now. "
+                    "`stop` ends it and closes the microphone at once. It can't be started from here: the "
+                    "microphone is the person's to open, with a tap or Start on the body's page."),
+    "input_schema": {"type": "object", "properties": {
+        "stop": {"type": "boolean", "description": "End back and forth now and close the microphone."},
+    }},
 }
 
 
@@ -259,3 +294,34 @@ async def soma_touches(after: int = 0, soma_voice: SomaVoice = None, **kwargs) -
     held = round((hand.to_ms - hand.from_ms) / 1000, 1) if hand.down and hand.from_ms is not None else None
     return json.dumps({"touches": touches, "last": f.last,
                        "hand": {"down": True, "seconds": held} if hand.down else {"down": False}}, indent=2)
+
+
+async def soma_heard(after: str = "", wait: int = 0, soma_voice: SomaVoice = None, **kwargs) -> str:
+    if (off := _off(voice=soma_voice)):
+        return off
+    try:
+        since = float(after) if str(after or "").strip() else 0.0
+    except ValueError:
+        return _err(f"{after!r} isn't a `last` this tool gave.", "Pass back the `last` from the call before, as it came.")
+    try:
+        h = await soma_voice.heard(after=max(0.0, since), wait=max(0, min(25, int(wait or 0))))
+    except (httpx.HTTPError, ValueError) as ex:
+        return _why("voice server", ex)
+    # `last` goes back as a string: a float this long loses its end when a model copies it, and the
+    # same line would come back twice.
+    return json.dumps({"heard": [{"said": e.text, "seconds": e.seconds, "ago": round(max(0.0, h.now - e.t), 1)}
+                                 for e in h.entries[-30:]],
+                       "last": repr(h.last)}, indent=2, ensure_ascii=False)
+
+
+async def soma_talk(stop: bool = False, soma_voice: SomaVoice = None, **kwargs) -> str:
+    if (off := _off(voice=soma_voice)):
+        return off
+    try:
+        t = await soma_voice.set_talk() if stop else await soma_voice.talk()
+        now = (await soma_voice.heard()).now if t.on and t.until else 0.0
+    except (httpx.HTTPError, ValueError) as ex:
+        return _why("voice server", ex)
+    return json.dumps({"on": t.on, **({"minutes_left": round(max(0.0, t.until - now) / 60, 1)} if t.on and t.until else {}),
+                       "listening": t.listening, "channel_open": t.channel_open,
+                       **({"voice": t.voice} if t.on else {}), **({"stopped": True} if stop else {})})

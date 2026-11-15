@@ -42,6 +42,17 @@ class Body:
             return httpx.Response(200, json={"night": {}, "work_hours": {}, "channel": {}, "night_now": True})
         if request.url.path == "/say":
             return httpx.Response(200, json={"ok": True, "seconds": 2.5})
+        if request.url.path == "/heard":
+            after = float(request.url.params.get("after", "0"))
+            lines = [{"t": 1794549131.4446588, "seconds": 2.3, "text": "you call that a combo"},
+                     {"t": 1794549140.25, "seconds": 1.1, "text": "h\u00e9llo there"}]
+            new = [e for e in lines if e["t"] > after]
+            return httpx.Response(200, json={"entries": new, "last": new[-1]["t"] if new else after, "now": 1794549145.25})
+        if request.url.path == "/talk":
+            self.talking = getattr(self, "talking", True) and request.method == "GET"
+            return httpx.Response(200, json={"on": self.talking, "until": 1794549145.25 + 600 if self.talking else None,
+                                             "voice": "held" if self.talking else "", "channel_open": self.talking,
+                                             "listening": self.talking, "minutes_range": [1, 180]})
         if request.url.path == "/touch":
             return httpx.Response(200, json={"events": [
                 {"seq": 4, "t": 1.0, "kind": "stroke", "way": "front_to_back", "t_ms": 1, "ms": 450, "showed": "loving"},
@@ -137,7 +148,8 @@ def test_no_body_configured_is_an_error_not_a_crash():
 
 def test_no_camera_tool():
     names = {v["name"] for k, v in vars(st).items() if k.endswith("_TOOL_DEF")}
-    assert names == {"soma_status", "soma_pose", "soma_say", "soma_settings", "soma_lights", "soma_head", "soma_touches"}
+    assert names == {"soma_status", "soma_pose", "soma_say", "soma_settings", "soma_lights", "soma_head", "soma_touches",
+                     "soma_heard", "soma_talk"}
     assert not any("photo" in n or "camera" in n for n in names)
 
 
@@ -184,3 +196,31 @@ def test_switched_on_they_are_listed_and_wired(make_client, tmp_path):
     assert {"soma_status", "soma_say", "soma_pose"} <= _tool_names(c)
     assert isinstance(c.app.state.di_registry["soma_robot"], SomaRobot)
     assert isinstance(c.app.state.di_registry["soma_voice"], SomaVoice)
+
+
+# -- hearing, and back and forth ---------------------------------------------------------------
+
+def test_heard_gives_the_words_and_a_last_that_comes_back_whole(body):
+    b, robot, voice = body
+    r = run(st.soma_heard(soma_voice=voice))
+    assert [e["said"] for e in r["heard"]] == ["you call that a combo", "h\u00e9llo there"]
+    assert r["heard"][1] == {"said": "h\u00e9llo there", "seconds": 1.1, "ago": 5.0}
+    assert r["last"] == "1794549140.25" and isinstance(r["last"], str)      # a string: nothing to round off
+    again = run(st.soma_heard(after=r["last"], wait=20, soma_voice=voice))
+    assert again["heard"] == [] and again["last"] == r["last"]
+    part = run(st.soma_heard(after="1794549131.4446588", soma_voice=voice))  # every digit survives the trip
+    assert [e["said"] for e in part["heard"]] == ["h\u00e9llo there"]
+    assert "isn't a `last`" in run(st.soma_heard(after="yesterday", soma_voice=voice))["error"]
+    assert ("/heard", None) in b.calls
+
+
+def test_talk_can_be_seen_and_stopped_and_never_started(body):
+    b, robot, voice = body
+    on = run(st.soma_talk(soma_voice=voice))
+    assert on == {"on": True, "minutes_left": 10.0, "listening": True, "channel_open": True, "voice": "held"}
+    off = run(st.soma_talk(stop=True, soma_voice=voice))
+    assert off == {"on": False, "listening": False, "channel_open": False, "stopped": True}
+    assert ("/talk", {"on": False}) in b.calls
+    # nothing here can open the microphone: the tool takes no length, and never posts one
+    assert set(st.SOMA_TALK_TOOL_DEF["input_schema"]["properties"]) == {"stop"}
+    assert not any(isinstance(sent, dict) and "minutes" in sent for _, sent in b.calls)
