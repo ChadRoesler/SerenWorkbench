@@ -60,6 +60,10 @@ RULES
     after the Workbench appears on its own.
   - A passed-through tool WINS over a builtin of the same name: the service's
     own `recall` replaces the old short-term-only one.
+  - The one exception: a CLAIMED name (the pages at the door - set_dedication,
+    set_preface, dedication, preface) is the Workbench's own. A component's
+    tool of that name is held back, not listed and not renamed, and only the
+    Workbench's builtin reaches it (call_held) - see seren_workbench.pages.
   - Two components with the same tool name: the first in COMPONENTS order
     keeps the name, the other is offered as <component>_<name>.
   - Every tool keeps its own switch in the registry (the dashboard's toggles),
@@ -171,13 +175,21 @@ class UpstreamHub:
     def __init__(self, services: Any, components: dict[str, bool], registry: Any = None,
                  self_addr: Optional[tuple[str, int]] = None,
                  connect: Optional[Callable[..., Any]] = None, audit_log: Any = None,
-                 plugins: Optional[list[Any]] = None) -> None:
+                 plugins: Optional[list[Any]] = None, claimed: Optional[set[str]] = None) -> None:
         self._registry = registry
         self._connect = connect or _connect
         self._audit = audit_log
         self._lock = asyncio.Lock()
         self._owner: dict[str, tuple[str, str]] = {}     # exposed name -> (component key, the component's own name)
         self._exposed: dict[str, Any] = {}               # exposed name -> mcp.types.Tool (renamed if it clashed)
+        # Names this Workbench answers ITSELF, the exception to "a passed-
+        # through tool wins": the pages at the door (seren_workbench.pages).
+        # A component's tool of that name is held back from the surface, not
+        # renamed - a margin_set_dedication would be a second door to the
+        # same page - and stays reachable through call_held(), for the
+        # write-through while Margin still keeps its own copy.
+        self._claimed: frozenset[str] = frozenset(claimed or ())
+        self._held: dict[str, tuple[str, str]] = {}      # claimed name -> (component key, its own name)
         self._self_addr = self_addr
         self.states: dict[str, ComponentState] = {}
         for spec in COMPONENTS:
@@ -279,6 +291,7 @@ class UpstreamHub:
     def _rebuild(self) -> None:
         owner: dict[str, tuple[str, str]] = {}
         exposed: dict[str, Any] = {}
+        held: dict[str, tuple[str, str]] = {}
         infos = []
         gated: set[str] = set()                                # first-seen tools of a start_disabled plugin
         can_gate = self._registry is not None and hasattr(self._registry, "has_state")
@@ -288,6 +301,9 @@ class UpstreamHub:
                 continue
             for tool in st.tools:
                 theirs = name = tool.name                      # what the component calls it
+                if name in self._claimed:                      # the Workbench answers this one itself
+                    held.setdefault(name, (spec.key, theirs))
+                    continue
                 if name in owner:                              # an earlier component has this name
                     name = f"{spec.key}_{theirs}"
                     log.warning("[seren-workbench] %s and %s both have a tool named '%s'; the second is offered as '%s'",
@@ -298,7 +314,7 @@ class UpstreamHub:
                 if st.start_disabled and can_gate and not self._registry.has_state(name):
                     gated.add(name)
                 infos.append(_tool_info(name, tool, spec, st))
-        self._owner, self._exposed = owner, exposed
+        self._owner, self._exposed, self._held = owner, exposed, held
         if gated:
             # Before they are handed over, so they ARRIVE off rather than
             # being switched off a moment after they could have been called.
@@ -344,6 +360,20 @@ class UpstreamHub:
                 log.info("[seren-workbench] component retry failed: %r", exc)
 
     # ── forwarding a call ─────────────────────────────────────────────────
+    def holds(self, name: str) -> bool:
+        """A claimed name some switched-on component also offers right now."""
+        held = self._held.get(name)
+        return held is not None and self.states[held[0]].enabled
+
+    async def call_held(self, name: str, arguments: Optional[dict[str, Any]]) -> Any:
+        """Forward to the component's own copy of a claimed tool. Only the
+        Workbench's own builtin calls this; nothing on the surface reaches it."""
+        key, upstream_name = self._held[name]
+        st = self.states[key]
+        if not st.enabled:
+            raise RuntimeError(f"the {st.spec.display} component is switched off in this Workbench")
+        return await self._forward(name, st, upstream_name, arguments, time.time())
+
     async def call(self, name: str, arguments: Optional[dict[str, Any]]) -> Any:
         """Forward one call to the component that owns the tool. Returns the
         component's content blocks; raises with its own words when the tool
@@ -358,6 +388,10 @@ class UpstreamHub:
             self._record(name, st, t0, arguments, False, "tool disabled by operator")
             raise RuntimeError(f"tool '{name}' is currently disabled by the operator "
                                "(see the Workbench dashboard's Tool State tab).")
+        return await self._forward(name, st, upstream_name, arguments, t0)
+
+    async def _forward(self, name: str, st: ComponentState, upstream_name: str,
+                       arguments: Optional[dict[str, Any]], t0: float) -> Any:
         try:
             async with self._connect(st.mcp_url, st.token, CALL_TIMEOUT) as session:
                 res = await session.call_tool(upstream_name, arguments or {})

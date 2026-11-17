@@ -115,6 +115,25 @@ from `<tool_config_dir>/<name>.yaml` on this box, read per call (so no
 restart when it changes): `dashboard.tool_config_dir`, default
 `customToolConfig` beside `tools_dir`. See docs/TOOL-MANIFESTS.md.
 
+### The pages at the door
+
+The dedication (the model's own page) and the preface (the room page) are
+read at every session start from a **piton**: plain files on the box the
+harness runs on (SerenCarabiners, `PITON.md`). The Workbench is usually not
+on that box, so it never writes one. `set_dedication` / `set_preface` keep
+the newest version here, numbered, in `.pages.json` beside the switches (a
+snapshot carries it), and each box's carabiner pulls it at its next session
+start with `GET /pages/<page>?after=<the number it last took>`. The number is
+this Workbench's own count, so no two clocks have to agree. Whether a box
+TAKES a page - who writes it there - is the piton's call, not this one's.
+
+These four names (`set_dedication`, `set_preface`, `dedication`, `preface`)
+are the Workbench's own: Margin's tools of the same names are held back from
+the surface, so there is one door to each page. While Margin still offers its
+writers (`pages: margin`, its default), a write here is handed to Margin too,
+so a box on an older carabiner, reading its bookmark from Margin, sees it.
+When Margin stops offering them (`pages: piton`), that stops by itself.
+
 ---
 
 ## Adding your own tools
@@ -271,6 +290,8 @@ backup:
 | `POST /tools/manifests/reload` | re-read the directory, apply it live |
 | `GET /components` | each component and plugin: on or off, reachable or why not; what is held |
 | `POST /components/state` | switch a component or plugin on or off |
+| `GET /pages` | the pages at the door this Workbench holds: number, when, size |
+| `GET /pages/{page}?after=N` | the newest version if it is past N, else 204 (a carabiner pulling) |
 | `GET /proposals` | tools and plugins the model has asked for |
 | `GET /proposals/{id}` | one, with the full manifest and what it would run |
 | `POST /proposals/{id}/approve` | install it, switched off |

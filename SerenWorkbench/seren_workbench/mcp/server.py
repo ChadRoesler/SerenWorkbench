@@ -57,8 +57,9 @@ logger = logging.getLogger(__name__)
 # and the WHOLE MCP mount fails, taking every tool with it.
 from seren_sinew.soma.client import SomaRobot, SomaVoice  # noqa: E402
 from ..models.tools.kitchen_tools import Kitchen  # noqa: E402
+from ..pages import Pages  # noqa: E402 - the pages at the door (page_tools)
 
-_DI_TYPES = (httpx.AsyncClient, McpConfig, ProposalStore, ToolAuditLog, Holds, SomaRobot, SomaVoice, Kitchen)
+_DI_TYPES = (httpx.AsyncClient, McpConfig, ProposalStore, ToolAuditLog, Holds, SomaRobot, SomaVoice, Kitchen, Pages)
 
 
 class ToolReportedError(RuntimeError):

@@ -51,6 +51,7 @@ from .routes import tools as tools_routes
 from .routes import config as config_routes
 from .routes import logs as logs_routes
 from .routes import gallery as gallery_routes
+from .routes import pages as pages_routes
 
 from seren_meninges import get_version
 from seren_meninges.auth import bearer_auth_middleware
@@ -209,9 +210,18 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
             # installed (<tools_dir>/plugins/). The config's win on a name.
             plugins = list(cfg.plugins) + PluginConfig.many_from_dir(
                 cfg.dashboard.resolve_plugins_dir(), taken={p.name for p in cfg.plugins})
+            # The pages at the door (pages.py): kept beside the switches, so a
+            # backup carries them. Their four tool names are claimed - Margin's
+            # copies are held back, and reached only for the write-through.
+            from .pages import PAGES_FILE_NAME, PageStore, Pages
+            from .models.tools import page_tools as _page_tools
+            _page_names = {v["name"] for k, v in vars(_page_tools).items() if k.endswith("_TOOL_DEF")}
             app.state.upstreams = UpstreamHub(
                 svc, cfg.components.as_dict(), registry=app.state.tool_registry,
-                self_addr=self_addr, audit_log=app.state.audit_log, plugins=plugins)
+                self_addr=self_addr, audit_log=app.state.audit_log, plugins=plugins,
+                claimed=_page_names)
+            app.state.pages = Pages(PageStore(os.path.join(cfg.dashboard.tools_dir, PAGES_FILE_NAME)),
+                                    offers=app.state.upstreams.holds, forward=app.state.upstreams.call_held)
 
             # The services this Workbench holds up through Lodestar's leases
             # (holds.py): remembered, and let go of when a session forgets.
@@ -230,6 +240,7 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
                 "scheduler": await _client(svc.scheduler_url, "scheduler"),
                 "config": mcp_config,
                 "proposals": app.state.proposals,
+                "pages": app.state.pages,
                 "_dynamic_web_client": _general,
                 "_self_addr": self_addr,
                 "_tool_config_dir": cfg.dashboard.resolve_tool_config_dir(),
@@ -403,5 +414,6 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
     app.include_router(config_routes.router)
     app.include_router(logs_routes.router)
     app.include_router(gallery_routes.router)
+    app.include_router(pages_routes.router)
 
     return app
