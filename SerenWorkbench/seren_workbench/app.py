@@ -221,7 +221,8 @@ def create_app(config: Optional[WorkbenchConfig] = None) -> FastAPI:
                 self_addr=self_addr, audit_log=app.state.audit_log, plugins=plugins,
                 claimed=_page_names)
             app.state.pages = Pages(PageStore(os.path.join(cfg.dashboard.tools_dir, PAGES_FILE_NAME)),
-                                    offers=app.state.upstreams.holds, forward=app.state.upstreams.call_held)
+                                    offers=app.state.upstreams.holds, forward=app.state.upstreams.call_held,
+                                    recheck=app.state.upstreams.recheck_held)
 
             # The services this Workbench holds up through Lodestar's leases
             # (holds.py): remembered, and let go of when a session forgets.

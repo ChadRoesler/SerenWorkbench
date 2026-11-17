@@ -168,7 +168,11 @@ class Pages:
 
     def __init__(self, store: PageStore,
                  offers: Optional[Callable[[str], bool]] = None,
-                 forward: Optional[Callable[[str, dict], Awaitable[Any]]] = None) -> None:
+                 forward: Optional[Callable[[str, dict], Awaitable[Any]]] = None,
+                 recheck: Optional[Callable[[str], Awaitable[None]]] = None) -> None:
         self.store = store
         self.offers = offers or (lambda name: False)
         self.forward = forward
+        # Ask Margin for its tools again after it refused a write-through
+        # (UpstreamHub.recheck_held): flipped to `pages: piton` and restarted.
+        self.recheck = recheck

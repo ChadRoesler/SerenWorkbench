@@ -365,6 +365,15 @@ class UpstreamHub:
         held = self._held.get(name)
         return held is not None and self.states[held[0]].enabled
 
+    async def recheck_held(self, name: str) -> None:
+        """Ask the component holding *name* for its tools again. The retry
+        loop only re-asks components that failed, and a Margin restarted with
+        `pages: piton` never failed: it just stopped offering its writers. A
+        write-through it refused is the sign, so the page tools call this."""
+        held = self._held.get(name)
+        if held is not None:
+            await self.refresh(only=held[0])
+
     async def call_held(self, name: str, arguments: Optional[dict[str, Any]]) -> Any:
         """Forward to the component's own copy of a claimed tool. Only the
         Workbench's own builtin calls this; nothing on the surface reaches it."""

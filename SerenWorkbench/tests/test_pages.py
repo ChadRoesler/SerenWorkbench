@@ -212,3 +212,26 @@ def test_over_the_real_mcp_endpoint_one_door_and_the_write_goes_through(make_cli
     assert out["ok"] and out["seq"] == 1 and "Margin" in out["margin"]
     assert world.calls[-1] == ("http://127.0.0.1:7421/mcp/", "set_dedication", {"text": "Stay in on the bit.", "why": "v7"})
     assert client.get("/pages/dedication").json()["text"] == "Stay in on the bit."
+
+
+def test_a_margin_flipped_to_piton_and_restarted_is_noticed_at_the_first_refusal():
+    """The retry loop only re-asks components that failed; a Margin restarted
+    with `pages: piton` never failed, it just stopped listing its writers."""
+    world, reg = World(), _registry()
+    hub = _margin_hub(world, reg)
+    store_dir = __import__("tempfile").mkdtemp()
+    pages = Pages(PageStore(f"{store_dir}/.pages.json"), offers=hub.holds, forward=hub.call_held,
+                  recheck=hub.recheck_held)
+    margin = "http://127.0.0.1:7421/mcp/"
+    # Margin restarts under `pages: piton`: refuses the writers, and no longer lists them
+    world.errors["set_dedication"] = "the dedication lives in the piton now: use the Workbench's set_dedication"
+    world.tools[margin] = [t for t in world.tools[margin] if t.name not in ("set_dedication", "set_preface")]
+    assert hub.holds("set_dedication"), "the hub has not noticed yet - that is the bug being pinned"
+
+    out = json.loads(asyncio.run(pt.set_dedication("first after the flip", pages=pages)))
+    assert out["ok"] and "no longer keeps the pages" in out["margin"]
+    assert not hub.holds("set_dedication")
+    sent = len([c for c in world.calls if c[1] == "set_dedication"])
+    out = json.loads(asyncio.run(pt.set_dedication("second after the flip", pages=pages)))
+    assert out["ok"] and "margin" not in out, "the next write is clean"
+    assert len([c for c in world.calls if c[1] == "set_dedication"]) == sent, "and not handed to Margin at all"

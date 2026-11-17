@@ -116,6 +116,14 @@ async def _set(page: str, text: str, why: Optional[str], pages: Optional[Pages])
             out["margin"] = "also kept in Margin, for boxes that still read their bookmark there"
         except Exception as ex:  # noqa: BLE001 - kept here is kept; Margin missing it is a line, not a failure
             out["margin"] = f"kept here, but Margin did not take it: {ex}"
+            if pages.recheck is not None:
+                try:
+                    await pages.recheck(tool)            # flipped to `pages: piton`? then this stops here
+                    if not pages.offers(tool):
+                        out["margin"] = ("kept here; Margin no longer keeps the pages (pages: piton), "
+                                         "so it is not handed there any more")
+                except Exception:  # noqa: BLE001 - the line above already says what happened
+                    pass
     return json.dumps(out, ensure_ascii=False)
 
 
