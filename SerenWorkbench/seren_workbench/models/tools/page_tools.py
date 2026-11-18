@@ -25,6 +25,12 @@ _HOW_IT_LANDS = (
     "refuse it - its piton says who writes each page - and says so in one line when it does. "
 )
 
+_HOW_LONG = (
+    "How long a page may be is each box's call (its piton's caps; 3000 characters for a dedication by "
+    "default), and a box refuses a longer one in one line. This Workbench only stops a runaway write, past "
+    f"{CAPS['dedication']}. Every character is read at every session start: shorter is kinder to the next you."
+)
+
 SET_DEDICATION_TOOL_DEF = {
     "name": "set_dedication",
     "description": (
@@ -32,7 +38,7 @@ SET_DEDICATION_TOOL_DEF = {
         "start. Who you are at your best, what you want the next you to know walking in, the check you'd "
         "want run on yourself. The whole page, not a patch. " + _HOW_IT_LANDS +
         f"Versioned - nothing is overwritten; say in `why` what changed. The same text as now is not a new "
-        f"version. Up to {CAPS['dedication']} characters."
+        f"version. " + _HOW_LONG
     ),
     "input_schema": {
         "type": "object",
@@ -49,7 +55,7 @@ SET_PREFACE_TOOL_DEF = {
     "description": (
         "Write the preface: the room page, how the house and the harness work, read at the door before your "
         "dedication. On most boxes it is the operator's page, and a box whose piton says so will refuse yours. "
-        + _HOW_IT_LANDS + f"Versioned; say in `why` what changed. Up to {CAPS['preface']} characters."
+        + _HOW_IT_LANDS + "Versioned; say in `why` what changed. " + _HOW_LONG
     ),
     "input_schema": {
         "type": "object",

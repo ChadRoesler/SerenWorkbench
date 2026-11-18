@@ -46,9 +46,13 @@ log = logging.getLogger(__name__)
 
 PAGES_FILE_NAME = ".pages.json"
 PAGES = ("dedication", "preface")
-# The piton's defaults (SerenCarabiners kbh/piton.py), which are Margin's.
-# A box with its own caps checks again when it pulls.
-CAPS = {"dedication": 2000, "preface": 8000}
+# A CEILING, not the cap. The real cap is each box's piton (piton.yaml
+# `caps:`), because that is where the session-start budget is spent, and a
+# box refuses a pulled page over it in one line at its next session start.
+# Mirroring the piton's number here made three caps that drifted (17 Nov 2026:
+# a 2253-character v6 that Margin held, the piton skipped at 2000 and this
+# would have refused). This only stops a runaway write.
+CAPS = {"dedication": 8000, "preface": 8000}
 SCHEMA = 1
 
 

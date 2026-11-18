@@ -148,7 +148,7 @@ def test_margin_switched_to_piton_or_down_still_keeps_the_page_here(tmp_path):
 
 def test_a_refused_page_is_an_error_and_nothing_is_handed_on(tmp_path):
     pages, margin = _pages(tmp_path)
-    out = json.loads(asyncio.run(pt.set_dedication("x" * 5000, pages=pages)))
+    out = json.loads(asyncio.run(pt.set_dedication("x" * (CAPS["dedication"] + 1), pages=pages)))
     assert out["ok"] is False and "cap" in out["error"] and margin.calls == []
 
 
@@ -235,3 +235,12 @@ def test_a_margin_flipped_to_piton_and_restarted_is_noticed_at_the_first_refusal
     out = json.loads(asyncio.run(pt.set_dedication("second after the flip", pages=pages)))
     assert out["ok"] and "margin" not in out, "the next write is clean"
     assert len([c for c in world.calls if c[1] == "set_dedication"]) == sent, "and not handed to Margin at all"
+
+
+def test_the_real_v6_is_not_refused_here_the_box_owns_the_cap(tmp_path):
+    """17 Nov 2026: v6 is 2253 characters. A Workbench mirroring the piton's
+    2000 would have refused the model's actual page."""
+    s = PageStore(str(tmp_path / ".pages.json"))
+    v, made = s.set("dedication", "x" * 2253, "the real v6's length")
+    assert made and v["seq"] == 1
+    assert "each box's call" in pt.SET_DEDICATION_TOOL_DEF["description"]
