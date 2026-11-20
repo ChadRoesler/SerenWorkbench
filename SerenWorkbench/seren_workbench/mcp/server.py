@@ -214,6 +214,34 @@ def _is_di_annotation(ann) -> bool:
     return False
 
 
+# What Claude Code reads on a tool to load it up front instead of deferring
+# it behind its tool search (2.1.285+). Any other client ignores `_meta`.
+ALWAYS_LOAD_META = "anthropic/alwaysLoad"
+
+
+def _always_load_names(app) -> frozenset:
+    """dashboard.tools_always_load, read on every listing: it is a short
+    list, and reading it here means a config reload needs nothing from us."""
+    dashboard = getattr(getattr(app.state, "config", None), "dashboard", None)
+    return frozenset(getattr(dashboard, "tools_always_load", None) or ())
+
+
+def mark_always_load(tools: list, names) -> list:
+    """The same list, with each tool in *names* carrying the always-load
+    mark. A marked tool is a COPY: the originals belong to FastMCP's manager
+    and to the upstream hub, and both hand the same objects out next time. A
+    tool's own `_meta` is kept, and a tool that says false for itself still
+    gets true - the operator's list is the later word."""
+    if not names:
+        return tools
+    out = []
+    for t in tools:
+        if t.name in names:
+            t = t.model_copy(update={"meta": {**(t.meta or {}), ALWAYS_LOAD_META: True}})
+        out.append(t)
+    return out
+
+
 def mount_mcp_routes(app: FastAPI):
     """Mount the SerenWorkbench MCP server onto an existing FastAPI app.
 
@@ -271,11 +299,15 @@ def mount_mcp_routes(app: FastAPI):
             self._see_session()
             tools = [t for t in await super().list_tools() if registry.is_enabled(t.name)]
             hub = getattr(app.state, "upstreams", None)
-            if hub is None:
-                return tools
-            theirs = hub.list_tools()
-            names = hub.names()
-            return [t for t in tools if t.name not in names] + theirs
+            if hub is not None:
+                theirs = hub.list_tools()
+                names = hub.names()
+                tools = [t for t in tools if t.name not in names] + theirs
+            # Marked HERE, on the way out, and not where a tool is registered:
+            # most of what a session uses first (search, recall, remember, the
+            # sleep and the clock) is passed through from a component and is
+            # never registered in this process at all.
+            return mark_always_load(tools, _always_load_names(app))
 
         async def call_tool(self, name, arguments):  # noqa: ANN001, ANN202
             self._see_session()

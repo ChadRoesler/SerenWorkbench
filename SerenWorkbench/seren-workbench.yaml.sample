@@ -127,6 +127,17 @@ dashboard:
   tools_dir: ~/seren-workbench/tools
   tools_enabled: []
   tools_disabled: []
+  # The few tools a client should have in hand from its first turn. Claude
+  # Code lists MCP tools by name only and fetches each description when it
+  # is asked for; a tool named here is listed with the always-load mark
+  # (`_meta: {"anthropic/alwaysLoad": true}`, Claude Code 2.1.285+), so it
+  # is there without the round trip. Any tool this Workbench offers can be
+  # named, a component's included. Each one costs its description in every
+  # turn, so keep it to what a session opens every time, e.g.:
+  #   tools_always_load: [search, recall, remember, read_letters,
+  #                       what_is_due, sleep_status, list_drafts,
+  #                       get_current_time]
+  tools_always_load: []
   state_file: ""
   proposals_enabled: true
   proposals_dir: ""

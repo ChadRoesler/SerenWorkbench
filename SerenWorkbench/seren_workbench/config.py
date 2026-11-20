@@ -52,6 +52,16 @@ def _expand(path: str) -> str:
     return os.path.expanduser(str(path or ""))
 
 
+def _names(value: Any) -> list[str]:
+    """A yaml list of names, as names: one string is a list of one, anything
+    that is not a string is dropped, and so is a blank."""
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, (list, tuple)):
+        return []
+    return [v.strip() for v in value if isinstance(v, str) and v.strip()]
+
+
 @dataclass
 class DashboardConfig:
     """Operator dashboard knobs.
@@ -68,6 +78,18 @@ class DashboardConfig:
     Precedence when they disagree: a tool named in the yaml lists above is
     the operator's written word and wins; everything else is whatever the
     dashboard last said.
+
+    tools_always_load names the few tools a client should have in hand from
+    its first turn. A client that defers MCP tools (Claude Code lists them by
+    name only and fetches each description when asked) otherwise spends a
+    round trip finding the tools it uses every session - the walk-in ones.
+    Each tool named here is listed with `_meta: {"anthropic/alwaysLoad":
+    true}`, which Claude Code 2.1.285+ honours and every other client
+    ignores. It is whoever's tool it is - a builtin, a manifest tool, or one
+    passed through from a component - and it costs that tool's description
+    in every turn, which is why this is a short list and not a switch for
+    everything. Empty = nothing marked. A name that matches no tool is
+    simply not there to mark.
 
     proposals_dir is the STAGING area for tools the model has proposed. It
     defaults to a subdirectory of tools_dir because that is where an
@@ -97,6 +119,7 @@ class DashboardConfig:
     tools_dir: str = DEFAULT_TOOLS_DIR
     tools_enabled: list[str] = field(default_factory=lambda: [])
     tools_disabled: list[str] = field(default_factory=lambda: [])
+    tools_always_load: list[str] = field(default_factory=lambda: [])
     proposals_dir: str = ""          # "" => <tools_dir>/proposed
     proposals_enabled: bool = True
     state_file: str = ""             # "" => <tools_dir>/.tool-state.json
@@ -155,6 +178,7 @@ class DashboardConfig:
             tools_dir=str(d.get("tools_dir") or DEFAULT_TOOLS_DIR),
             tools_enabled=list(d.get("tools_enabled") or []),
             tools_disabled=list(d.get("tools_disabled") or []),
+            tools_always_load=_names(d.get("tools_always_load")),
             proposals_dir=str(d.get("proposals_dir", "") or ""),
             proposals_enabled=bool(d.get("proposals_enabled", True)),
             state_file=str(d.get("state_file", "") or ""),
